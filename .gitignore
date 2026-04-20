@@ -27,8 +27,8 @@ ros2_ws/log/
 *.bag
 *.db3
 
-# Models
-*.onnx
+# Models (keep .onnx, ignore .data)
+*.onnx.data
 *.trt
 *.engine
 
