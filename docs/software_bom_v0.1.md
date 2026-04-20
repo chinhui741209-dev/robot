@@ -37,16 +37,27 @@
 | torch | 2.11.0+cpu | ML Framework | ✅ |
 | onnx | 1.21.0 | ONNX Format | ✅ |
 | onnxruntime | 1.23.2 | ONNX Inference (CPU) | ✅ |
+| opencv-python | 4.13.0 | Computer Vision | ✅ |
+
+### NVIDIA JetPack 6.1 (已安裝)
+
+| Package | Version | Status |
+|---------|---------|--------|
+| TensorRT | 10.3.0 | ✅ CLI 可用 |
+| libnvinfer10 | 10.3.0 | ✅ |
+| libnvinfer-bin | 10.3.0 | ✅ |
+| CUDA (L4T) | 36.4.7 | ✅ |
+| trtexec | 10.3.0 | ✅ |
 
 ### Python Packages (需安裝)
 
 | Package | Version | Purpose | Priority | Status |
 |---------|---------|---------|----------|--------|
-| onnxruntime-gpu | 1.17+ | ONNX Inference (GPU) | P0 | ❌ 需 JetPack |
-| tensorrt | (via JetPack) | NVIDIA Inference | P0 | ❌ 需 JetPack |
-| pycuda | - | CUDA Python | P1 | ❌ 需 CUDA |
-| pyserial | - | Serial Comm | P1 | TODO |
-| can-utils | - | CAN Bus | P1 | TODO |
+| onnxruntime-gpu | 1.17+ | ONNX Inference (GPU) | P1 | TODO |
+| tensorrt (Python) | 10.0+ | NVIDIA Inference | P1 | TODO |
+| pycuda | - | CUDA Python | P2 | TODO |
+| pyserial | - | Serial Comm | P2 | TODO |
+| can-utils | - | CAN Bus | P2 | TODO |
 
 ### 容器與編排
 

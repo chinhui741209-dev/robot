@@ -40,18 +40,28 @@
 | PyTorch | 2.11.0+cpu | ✅ |
 | ONNX | 1.21.0 | ✅ |
 | ONNX Runtime | 1.23.2 (CPU) | ✅ |
-| TensorRT | 未安裝 | 需 JetPack |
+| TensorRT | 10.3.0 | ✅ (CLI) |
+| OpenCV | 4.13.0 | ✅ |
 | NumPy | 1.26.4 | ✅ |
 | Pandas | 1.3.5 | ✅ |
+
+### 感知層
+
+| 項目 | 版本 | 備註 |
+|------|------|------|
+| USB Camera | /dev/video0 | ✅ |
+| Camera Node | v0.1 | ✅ |
+| Detection Model | detection.onnx | ✅ |
+| Visualization | v0.1 | ✅ |
 
 ### 容器層
 
 | 項目 | 版本 | 備註 |
 |------|------|------|
-| Docker | 29.1.5 | |
-| Docker Compose | 2.x (plugin) | |
-| K3s | 未安裝 | 需安裝 |
-| Containerd | 2.x | |
+| Docker | 29.1.5 | ✅ |
+| Docker Compose | 5.0.1 | ✅ |
+| K3s | 1.34.6 | ✅ 已安裝 |
+| Containerd | 2.x | ✅ |
 
 ## 目錄結構
 
@@ -70,20 +80,27 @@ poc-orin/
 
 ## 已知問題
 
-1. **RT Kernel 未安裝** - 僅有 PREEMPT，無 PREEMPT_RT
-2. **TensorRT 未安裝** - 需 JetPack
-3. **ONNX Runtime GPU 未支援** - 需 JetPack/CUDA
-4. **K3s 未安裝** - 容器編排待部署
-5. **高頻控制置於 ROS 2** - 1kHz/500Hz 控制迴路在 ROS 2 node 內
+1. **RT Kernel 未安裝** - 僅有 PREEMPT，無 PREEMPT_RT (future)
+2. **TensorRT Python binding** - 缺少 libnvdla library (future)
+3. **ONNX Runtime GPU** - 使用 CPU 版本 (future)
+4. **USB Camera 驅動** - 已驗證可用
+5. **高頻控制置於 ROS 2** - 需重構 (future)
 
-## 待完成項目
+## 待完成項目 (Future)
 
 - [ ] 安裝 RT Linux kernel (PREEMPT_RT)
-- [x] 安裝 PyTorch + ONNX Runtime (CPU 版)
-- [ ] 安裝 TensorRT + ONNX Runtime GPU (via JetPack)
-- [ ] 安裝 K3s
 - [ ] 重構運控架構 (RT thread 分離)
-- [x] 部署實際 ONNX 模型
+- [ ] 優化 detection model
+- [ ] 整合 policy action
+
+## 當前可用功能 (v0.2)
+
+- [x] Git 版本控制
+- [x] K3s 容器編排
+- [x] USB Camera ROS 2 node
+- [x] ONNX Object Detection
+- [x] Bring-up scripts
+- [x] Docker Compose
 
 ## 驗收條件
 
