@@ -1,0 +1,38 @@
+# Simple Docker Compose for Robot POC
+# Uses local code - no image pull required
+# Run: docker compose -f docker-compose.simple.yml up -d
+
+services:
+  # HAL Node
+  hal-buddy:
+    image: ubuntu:22.04
+    container_name: hal-buddy
+    command: sleep infinity
+    volumes:
+      - ../../:/workspace
+    environment:
+      - ROS_DOMAIN_ID=42
+    network_mode: host
+    privileged: true
+
+  # Policy Node
+  policy-node:
+    image: ubuntu:22.04
+    container_name: policy-node
+    command: sleep infinity
+    volumes:
+      - ../../:/workspace
+    environment:
+      - ROS_DOMAIN_ID=42
+    network_mode: host
+
+  # Recorder
+  recorder:
+    image: ubuntu:22.04
+    container_name: recorder
+    command: sleep infinity
+    volumes:
+      - ../../:/workspace
+    environment:
+      - ROS_DOMAIN_ID=42
+    network_mode: host
