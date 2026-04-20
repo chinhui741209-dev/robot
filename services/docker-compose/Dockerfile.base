@@ -1,0 +1,19 @@
+# Base Dockerfile for Robot POC
+FROM ros:humble-ros-base-jammy
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-numpy \
+    python3-onnx \
+    python3-onnxruntime \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python path
+ENV PYTHONPATH=/workspace:$PYTHONPATH
+
+WORKDIR /workspace
+
+CMD ["bash"]

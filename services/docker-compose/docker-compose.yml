@@ -1,0 +1,80 @@
+# Docker Compose for Robot POC
+# Alternative to K3s for single-node deployment
+# Run: docker compose up -d
+
+services:
+  # ROS 2 Core
+  ros2-core:
+    image: ros:humble-ros-base-jammy
+    container_name: ros2-core
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - ROS_DOMAIN_ID=42
+    volumes:
+      - ../ros2_ws:/workspace/ros2_ws
+      - ./configs/ros2.env:/etc/ros/env.sh
+    network_mode: host
+    command: bash -c "source /opt/ros/humble/setup.bash && ros2 run rmw_cyclone_dds_cmake"
+
+  # HAL Node
+  hal-buddy:
+    build:
+      context: ../hal
+      dockerfile: Dockerfile.hal
+    container_name: hal-buddy
+    runtime: nvidia
+    privileged: true
+    volumes:
+      - ../hal:/workspace/hal
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=42
+    command: python3 /workspace/hal/scripts/hal_buddy_node.py
+
+  # Policy Node
+  policy-node:
+    build:
+      context: ..
+      dockerfile: Dockerfile.policy
+    container_name: policy-node
+    runtime: nvidia
+    volumes:
+      - ../models/active:/workspace/models
+      - ../models/configs:/workspace/configs
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=42
+    command: python3 /workspace/policy/policy_node.py
+
+  # State Estimator
+  state-estimator:
+    build:
+      context: ..
+      dockerfile: Dockerfile.rt_control
+    container_name: state-estimator
+    runtime: nvidia
+    volumes:
+      - ../rt_control:/workspace/rt_control
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=42
+    command: python3 /workspace/rt_control/state_estimator.py
+
+  # Recorder / Logger
+  recorder:
+    build:
+      context: ..
+      dockerfile: Dockerfile.middleware
+    container_name: recorder
+    volumes:
+      - ../logs:/workspace/logs
+      - ../middleware:/workspace/middleware
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=42
+    command: python3 /workspace/middleware/recorder_node.py
+
+networks:
+  default:
+    driver: bridge

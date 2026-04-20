@@ -1,0 +1,35 @@
+# K3s Deployment: Policy Node
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: policy-node
+  namespace: robot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: policy-node
+  template:
+    metadata:
+      labels:
+        app: policy-node
+    spec:
+      containers:
+      - name: policy-node
+        image: ros:humble-ros-base-jammy
+        command: ["python3", "/workspace/policy/policy_node.py"]
+        volumeMounts:
+        - name: policy-scripts
+          mountPath: /workspace/policy
+        - name: models
+          mountPath: /workspace/models
+        env:
+        - name: ROS_DOMAIN_ID
+          value: "42"
+      volumes:
+      - name: policy-scripts
+        hostPath:
+          path: /home/nvidia/poc/poc-orin/policy
+      - name: models
+        hostPath:
+          path: /home/nvidia/poc/poc-orin/models/active

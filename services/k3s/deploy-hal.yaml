@@ -1,0 +1,43 @@
+# K3s Deployment: HAL Node
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hal-buddy
+  namespace: robot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hal-buddy
+  template:
+    metadata:
+      labels:
+        app: hal-buddy
+    spec:
+      containers:
+      - name: hal-buddy
+        image: ros:humble-ros-base-jammy
+        command: ["python3", "/workspace/hal/scripts/hal_buddy_node.py"]
+        volumeMounts:
+        - name: hal-scripts
+          mountPath: /workspace/hal
+        env:
+        - name: ROS_DOMAIN_ID
+          value: "42"
+      volumes:
+      - name: hal-scripts
+        hostPath:
+          path: /home/nvidia/poc/poc-orin/hal
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hal-buddy
+  namespace: robot
+spec:
+  selector:
+    app: hal-buddy
+  ports:
+  - port: 10000
+    targetPort: 10000
+  clusterIP: None

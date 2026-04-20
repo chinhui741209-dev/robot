@@ -1,0 +1,17 @@
+[Unit]
+Description=Robot POC Core Service
+After=network.target
+
+[Service]
+Type=simple
+User=nvidia
+WorkingDirectory=/home/nvidia/poc/poc-orin
+Environment="ROS_DOMAIN_ID=42"
+Environment="PYTHONPATH=/home/nvidia/poc/poc-orin:$PYTHONPATH"
+ExecStartPre=/bin/bash -c 'source /opt/ros/humble/setup.bash'
+ExecStart=/home/nvidia/poc/poc-orin/bringup/bringup_all.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

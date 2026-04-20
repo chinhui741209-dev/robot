@@ -1,0 +1,15 @@
+# K3s Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: robot
+---
+# ConfigMap for ROS settings
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ros-config
+  namespace: robot
+data:
+  ROS_DOMAIN_ID: "42"
+  ROS_LOCALHOST_ONLY: "0"
