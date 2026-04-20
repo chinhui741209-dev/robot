@@ -34,18 +34,19 @@
 | pandas | 1.3.5 | Data Analysis |
 | rclpy | (ROS 2) | ROS 2 Python |
 | colcon | - | Build Tool |
+| torch | 2.11.0+cpu | ML Framework | ✅ |
+| onnx | 1.21.0 | ONNX Format | ✅ |
+| onnxruntime | 1.23.2 | ONNX Inference (CPU) | ✅ |
 
 ### Python Packages (需安裝)
 
-| Package | Version | Purpose | Priority |
-|---------|---------|---------|----------|
-| torch | 2.x | ML Framework | P0 |
-| onnx | 1.15+ | ONNX Format | P0 |
-| onnxruntime-gpu | 1.17+ | ONNX Inference | P0 |
-| tensorrt | (via JetPack) | NVIDIA Inference | P0 |
-| pycuda | - | CUDA Python | P1 |
-| pyserial | - | Serial Comm | P1 |
-| can-utils | - | CAN Bus | P1 |
+| Package | Version | Purpose | Priority | Status |
+|---------|---------|---------|----------|--------|
+| onnxruntime-gpu | 1.17+ | ONNX Inference (GPU) | P0 | ❌ 需 JetPack |
+| tensorrt | (via JetPack) | NVIDIA Inference | P0 | ❌ 需 JetPack |
+| pycuda | - | CUDA Python | P1 | ❌ 需 CUDA |
+| pyserial | - | Serial Comm | P1 | TODO |
+| can-utils | - | CAN Bus | P1 | TODO |
 
 ### 容器與編排
 

@@ -37,11 +37,12 @@
 
 | 項目 | 版本 | 備註 |
 |------|------|------|
-| PyTorch | 未安裝 | 需安裝 |
-| ONNX Runtime | 未安裝 | 需安裝 |
-| TensorRT | 未安裝 | 需安裝 (JetPack) |
-| NumPy | 1.26.4 | |
-| Pandas | 1.3.5 | |
+| PyTorch | 2.11.0+cpu | ✅ |
+| ONNX | 1.21.0 | ✅ |
+| ONNX Runtime | 1.23.2 (CPU) | ✅ |
+| TensorRT | 未安裝 | 需 JetPack |
+| NumPy | 1.26.4 | ✅ |
+| Pandas | 1.3.5 | ✅ |
 
 ### 容器層
 
@@ -70,19 +71,19 @@ poc-orin/
 ## 已知問題
 
 1. **RT Kernel 未安裝** - 僅有 PREEMPT，無 PREEMPT_RT
-2. **ML 框架未安裝** - PyTorch, ONNX Runtime, TensorRT 需另行安裝
-3. **K3s 未安裝** - 容器編排待部署
-4. **高頻控制置於 ROS 2** - 1kHz/500Hz 控制迴路在 ROS 2 node 內
-5. **模型全為模擬** - policy, perception 為 sim=True 假資料
+2. **TensorRT 未安裝** - 需 JetPack
+3. **ONNX Runtime GPU 未支援** - 需 JetPack/CUDA
+4. **K3s 未安裝** - 容器編排待部署
+5. **高頻控制置於 ROS 2** - 1kHz/500Hz 控制迴路在 ROS 2 node 內
 
 ## 待完成項目
 
 - [ ] 安裝 RT Linux kernel (PREEMPT_RT)
-- [ ] 安裝 PyTorch + ONNX Runtime
-- [ ] 安裝 TensorRT (via JetPack)
+- [x] 安裝 PyTorch + ONNX Runtime (CPU 版)
+- [ ] 安裝 TensorRT + ONNX Runtime GPU (via JetPack)
 - [ ] 安裝 K3s
 - [ ] 重構運控架構 (RT thread 分離)
-- [ ] 部署實際 ONNX 模型
+- [x] 部署實際 ONNX 模型
 
 ## 驗收條件
 
