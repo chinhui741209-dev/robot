@@ -39,15 +39,27 @@
 | onnxruntime | 1.23.2 | ONNX Inference (CPU) | ✅ |
 | opencv-python | 4.13.0 | Computer Vision | ✅ |
 
-### NVIDIA JetPack 6.1 (已安裝)
+### NVIDIA JetPack 6.1 (部分安裝)
 
 | Package | Version | Status |
 |---------|---------|--------|
-| TensorRT | 10.3.0 | ✅ CLI 可用 |
+| TensorRT | 10.3.0 | ⚠️ CLI 可用，但需要完整 CUDA |
 | libnvinfer10 | 10.3.0 | ✅ |
 | libnvinfer-bin | 10.3.0 | ✅ |
-| CUDA (L4T) | 36.4.7 | ✅ |
-| trtexec | 10.3.0 | ✅ |
+| CUDA (L4T) | 36.4.7 | ⚠️ 部分 |
+| trtexec | 10.3.0 | ⚠️ 需要完整 JetPack |
+| DLA Compiler | 36.4.7 | ✅ 已安裝 |
+
+### TensorRT 編譯狀態
+
+| 模型 | ONNX | TensorRT Engine | 狀態 |
+|------|------|-----------------|------|
+| simple_policy.onnx | ✅ | ⏳ | 需要完整 JetPack |
+| detection.onnx | ✅ | ⏳ | 需要完整 JetPack |
+
+**注意**: 目前 TensorRT 需要完整 CUDA 庫才能編譯 engine。請使用 SDK Manager 安裝完整 JetPack 6.1。
+
+**當前解決方案**: 使用 ONNX Runtime (CPU) 進行推論
 
 ### Python Packages (需安裝)
 
