@@ -7,8 +7,10 @@ Type=simple
 User=nvidia
 WorkingDirectory=/home/nvidia/poc/poc-orin
 Environment="ROS_DOMAIN_ID=42"
+Environment="RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+Environment="ROS2Daemon=False"
 Environment="PYTHONPATH=/home/nvidia/poc/poc-orin:$PYTHONPATH"
-ExecStartPre=/bin/bash -c 'source /opt/ros/humble/setup.bash'
+ExecStartPre=/bin/bash -c 'source /opt/ros/humble/setup.bash && pkill -9 ros2-daemon 2>/dev/null || true'
 ExecStart=/home/nvidia/poc/poc-orin/bringup/bringup_all.sh
 Restart=on-failure
 RestartSec=10

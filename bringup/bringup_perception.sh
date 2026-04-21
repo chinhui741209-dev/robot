@@ -11,6 +11,9 @@ echo "Bring-up: Perception Layer (with Camera)"
 echo "=========================================="
 
 source /opt/ros/humble/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS2Daemon=False
+export ROS_DOMAIN_ID=42
 export POC_ROOT="$POC_ROOT"
 export PYTHONPATH="$PYTHONPATH:$POC_ROOT"
 
@@ -36,20 +39,21 @@ python3 -c "import cv2" 2>/dev/null && echo "  OpenCV: OK" || echo "  OpenCV: FA
 python3 -c "import onnxruntime" 2>/dev/null && echo "  ONNX Runtime: OK" || echo "  ONNX Runtime: FAIL"
 
 echo "[4/5] Starting Camera Node..."
-python3 "$POC_ROOT/perception/scripts/camera_node.py" &
+nohup python3 "$POC_ROOT/perception/scripts/camera_node.py" > "$POC_ROOT/logs/camera.log" 2>&1 &
 CAMERA_PID=$!
 echo "  Camera Node PID: $CAMERA_PID"
 
-sleep 2
+sleep 1
 
 echo "[5/5] Starting Perception Node..."
-python3 "$POC_ROOT/perception/scripts/perception_node.py" &
+nohup python3 "$POC_ROOT/perception/scripts/perception_node.py" > "$POC_ROOT/logs/perception.log" 2>&1 &
 PERCEPTION_PID=$!
 echo "  Perception Node PID: $PERCEPTION_PID"
 
+sleep 1
 echo ""
 echo "=========================================="
-echo "Perception bring-up complete"
+echo "Perception bring-up complete (nodes running)"
 echo "=========================================="
 echo ""
 echo "Topics:"

@@ -4,6 +4,12 @@ USB Camera ROS 2 Node
  Publishes camera images to ROS 2 topics
 """
 
+import signal
+import sys
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -28,8 +34,9 @@ class CameraNode(Node):
         self.width = self.get_parameter("width").value
         self.height = self.get_parameter("height").value
 
-        self.publisher = self.create_publisher(Image, "/camera/image_raw", 10)
-        self.timer = self.create_timer(1.0 / self.publish_rate, self.publish_frame)
+        self._publisher = None
+        self._timer = None
+        self._setup_publisher()
 
         self.cap = None
         self.frame_count = 0
@@ -48,32 +55,62 @@ class CameraNode(Node):
         actual_height = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
         self.get_logger().info(f"Camera opened: {actual_width}x{actual_height}")
 
+    def _setup_publisher(self):
+        if self._publisher is not None:
+            self.destroy_publisher(self._publisher)
+        if self._timer is not None:
+            self.destroy_timer(self._timer)
+        self._publisher = self.create_publisher(Image, "/camera/image_raw", 1)
+        self._timer = self.create_timer(1.0 / self.publish_rate, self.publish_frame)
+
     def publish_frame(self):
         if self.cap is None or not self.cap.isOpened():
             return
 
-        ret, frame = self.cap.read()
-        if not ret:
-            self.get_logger().warn("Failed to read frame")
+        if not rclpy.ok():
+            self.get_logger().warn("Context not OK, recreating publisher")
+            self._setup_publisher()
             return
 
-        self.frame_count += 1
+        try:
+            ret, frame = self.cap.read()
+            if not ret:
+                self.get_logger().warn("Failed to read frame")
+                return
 
-        msg = Image()
-        msg.header = Header()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self.frame_id
+            self.frame_count += 1
 
-        msg.height = frame.shape[0]
-        msg.width = frame.shape[1]
-        msg.encoding = "bgr8"
-        msg.step = frame.shape[1] * 3
-        msg.data = frame.tobytes()
+            if not rclpy.ok():
+                self.get_logger().warn(
+                    "Context not OK after read, recreating publisher"
+                )
+                self._setup_publisher()
+                return
 
-        self.publisher.publish(msg)
+            msg = Image()
+            msg.header = Header()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = self.frame_id
 
-        if self.frame_count % 30 == 0:
-            self.get_logger().info(f"Published frame {self.frame_count}")
+            msg.height = frame.shape[0]
+            msg.width = frame.shape[1]
+            msg.encoding = "bgr8"
+            msg.step = frame.shape[1] * 3
+            msg.data = frame.tobytes()
+
+            try:
+                self._publisher.publish(msg)
+            except Exception as pub_err:
+                self.get_logger().error(
+                    f"Publish error: {pub_err}, recreating publisher"
+                )
+                self._setup_publisher()
+                return
+
+            if self.frame_count % 30 == 0:
+                self.get_logger().info(f"Published frame {self.frame_count}")
+        except Exception as e:
+            self.get_logger().error(f"Frame error: {e}")
 
     def destroy_node(self):
         if self.cap:
@@ -85,13 +122,25 @@ def main(args=None):
     rclpy.init(args=args)
     node = CameraNode()
 
+    from rclpy.executors import MultiThreadedExecutor
+
+    executor = MultiThreadedExecutor(num_threads=1)
+    executor.add_node(node)
+
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+        executor.spin()
+    except Exception as e:
+        node.get_logger().error(f"Spin error: {e}")
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

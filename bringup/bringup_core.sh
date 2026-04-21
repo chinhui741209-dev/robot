@@ -18,6 +18,9 @@ if [ ! -f /opt/ros/humble/setup.bash ]; then
 fi
 
 source /opt/ros/humble/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS2Daemon=False
+export ROS_DOMAIN_ID=42
 
 echo "[1/5] Checking system..."
 uname -a
