@@ -19,11 +19,13 @@ class PerceptionNode(Node):
         super().__init__("perception_node")
 
         self.declare_parameter(
-            "model_path", "/home/nvidia/poc/poc-orin/models/active/detection.onnx"
+            "model_path", "/home/nvidia/poc/poc-orin/models/active/detection_v2.onnx"
         )
         self.declare_parameter("confidence_threshold", 0.5)
         self.declare_parameter("input_size", 224)
         self.declare_parameter("publish_rate", 10.0)
+
+        self.class_names = ["pen", "box"]
 
         model_path = self.get_parameter("model_path").value
         self.confidence_threshold = self.get_parameter("confidence_threshold").value
@@ -69,12 +71,26 @@ class PerceptionNode(Node):
         if output is None or len(output) == 0:
             return detections
 
-        output = output[0][0]
+        try:
+            output = np.array(output[0])
+            if len(output) == 0:
+                return detections
 
-        if len(output) >= 5:
-            x, y, w, h, conf = output[:5]
+            for det in output:
+                det = np.array(det)
+                if len(det) < 6:
+                    continue
 
-            if conf > self.confidence_threshold:
+                conf = float(det[4])
+                if conf < self.confidence_threshold:
+                    continue
+
+                cls = int(det[5])
+                x = float(det[0])
+                y = float(det[1])
+                w = float(det[2])
+                h = float(det[3])
+
                 x1 = int((x - w / 2) * image_shape[1])
                 y1 = int((y - h / 2) * image_shape[0])
                 x2 = int((x + w / 2) * image_shape[1])
@@ -85,7 +101,17 @@ class PerceptionNode(Node):
                 x2 = max(0, min(x2, image_shape[1]))
                 y2 = max(0, min(y2, image_shape[0]))
 
-                detections.append({"bbox": [x1, y1, x2, y2], "confidence": float(conf)})
+                class_name = (
+                    self.class_names[cls]
+                    if cls < len(self.class_names)
+                    else f"class{cls}"
+                )
+
+                detections.append(
+                    {"bbox": [x1, y1, x2, y2], "confidence": conf, "class": class_name}
+                )
+        except Exception as e:
+            pass
 
         return detections
 
