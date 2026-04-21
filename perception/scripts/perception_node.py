@@ -7,7 +7,7 @@ Perception Node - ONNX Object Detection
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from vision_msgs.msg import Detection2DArray, Detection2D, BoundingBox2D
+from vision_msgs.msg import Detection2DArray, Detection2D, BoundingBox2D, ObjectHypothesisWithPose
 from std_msgs.msg import Header, Float32MultiArray
 import cv2
 import numpy as np
@@ -147,7 +147,10 @@ class PerceptionNode(Node):
                 det_msg.bbox.center.position.y = (det["bbox"][1] + det["bbox"][3]) / 2
                 det_msg.bbox.size_x = det["bbox"][2] - det["bbox"][0]
                 det_msg.bbox.size_y = det["bbox"][3] - det["bbox"][1]
-                det_msg.results[0].hypothesis.confidence = det["confidence"]
+                hyp = ObjectHypothesisWithPose()
+                hyp.hypothesis.class_id = det["class"]
+                hyp.hypothesis.score = det["confidence"]
+                det_msg.results.append(hyp)
                 detection_msg.detections.append(det_msg)
 
             self.detection_pub.publish(detection_msg)

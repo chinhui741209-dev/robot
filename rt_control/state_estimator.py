@@ -1,91 +1,117 @@
 #!/usr/bin/env python3
 """
-State Estimator - 500 Hz pose estimation from IMU
+State Estimator — 500 Hz LCM-in / LCM-out.
+
+Subscribes: BUDDY_IMU  (1000 Hz)  → integrate accel → velocity → position
+Publishes:  STATE_POSE (500 Hz)
+
+ROS 2 removed: 500 Hz publish loop with DDS serialization adds 2-5 ms jitter.
+lcm_ros2_bridge republishes STATE_POSE to /state/pose for downstream nodes.
 """
 
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Imu
-from geometry_msgs.msg import Pose, TransformStamped
+import sys
 import math
-import numpy as np
+import time
+import signal
+import threading
+import lcm
+
+sys.path.insert(0, __file__.rsplit("/rt_control/", 1)[0])
+from lcm_types.robot_lcm_types import (
+    BuddyImu, StatePose,
+    BUDDY_IMU, STATE_POSE,
+)
+
+_RATE  = 500
+_DT    = 1.0 / _RATE
 
 
-class StateEstimator(Node):
+class StateEstimator:
     def __init__(self):
-        super().__init__("state_estimator")
+        self._lc       = lcm.LCM()
+        self._lock     = threading.Lock()
+        self._stop     = threading.Event()
+        self._counter  = 0
+        self._velocity = [0.0, 0.0, 0.0]
+        self._position = [0.0, 0.0, 0.0]
+        self._orient   = [0.0, 0.0, 0.0, 1.0]
 
-        self.declare_parameter("rate", 500)
-        self.rate = self.get_parameter("rate").value
+        self._lc.subscribe(BUDDY_IMU, self._imu_handler)
 
-        self.pose_pub = self.create_publisher(Pose, "/state/pose", 10)
-        self.tf_pub = self.create_publisher(TransformStamped, "/tf", 10)
+        self._lcm_thread = threading.Thread(target=self._lcm_loop, daemon=True)
 
-        self.imu_sub = self.create_subscription(
-            Imu, "/buddy/imu", self.imu_callback, 10
-        )
+    def _imu_handler(self, channel, data):
+        msg = BuddyImu.decode(data)
+        dt  = 1.0 / 1000.0   # IMU runs at 1kHz
 
-        self.timer = self.create_timer(1.0 / self.rate, self.publish_state)
+        ax = msg.linear_acceleration[0]
+        ay = msg.linear_acceleration[1]
+        az = msg.linear_acceleration[2] - 9.8   # remove gravity bias
 
-        self.counter = 0
-        self.velocity = [0.0, 0.0, 0.0]
-        self.position = [0.0, 0.0, 0.0]
+        with self._lock:
+            self._velocity[0] += ax * dt
+            self._velocity[1] += ay * dt
+            self._velocity[2] += az * dt
+            self._position[0] += self._velocity[0] * dt
+            self._position[1] += self._velocity[1] * dt
+            self._position[2] += self._velocity[2] * dt
+            self._orient = msg.orientation[:]
 
-        self.get_logger().info(f"State Estimator started at {self.rate} Hz (sim=True)")
+    def _lcm_loop(self):
+        while not self._stop.is_set():
+            self._lc.handle_timeout(1)   # 1 ms timeout keeps thread responsive
 
-    def imu_callback(self, msg):
-        dt = 1.0 / self.rate
+    def run(self):
+        self._lcm_thread.start()
 
-        ax = msg.linear_acceleration.x - 9.8 * 0.0
-        ay = msg.linear_acceleration.y - 9.8 * 0.0
-        az = msg.linear_acceleration.z - 9.8
+        t_next = time.perf_counter()
+        print(f"[state_estimator] started at {_RATE} Hz via LCM", flush=True)
 
-        self.velocity[0] += ax * dt
-        self.velocity[1] += ay * dt
-        self.velocity[2] += az * dt
+        while not self._stop.is_set():
+            now = time.perf_counter()
+            if now < t_next:
+                time.sleep(t_next - now)
+            t_next += _DT
+            self._counter += 1
 
-        self.position[0] += self.velocity[0] * dt
-        self.position[1] += self.velocity[1] * dt
-        self.position[2] += self.velocity[2] * dt
+            with self._lock:
+                pos    = self._position[:]
+                orient = self._orient[:]
 
-    def publish_state(self):
-        self.counter += 1
+            pose            = StatePose()
+            pose.timestamp  = int(time.monotonic() * 1e6)
+            pose.position   = pos
+            pose.orientation = [
+                math.sin(self._counter * 0.001),
+                math.cos(self._counter * 0.001),
+                math.sin(self._counter * 0.0005),
+                math.cos(self._counter * 0.0005),
+            ]
+            self._lc.publish(STATE_POSE, pose.encode())
 
-        pose = Pose()
-        pose.position.x = self.position[0]
-        pose.position.y = self.position[1]
-        pose.position.z = self.position[2]
+            if self._counter % 500 == 0:
+                print(
+                    f"[state_estimator] pos=({pos[0]:.3f},{pos[1]:.3f},{pos[2]:.3f})",
+                    flush=True,
+                )
 
-        pose.orientation.x = math.sin(self.counter * 0.001)
-        pose.orientation.y = math.cos(self.counter * 0.001)
-        pose.orientation.z = math.sin(self.counter * 0.0005)
-        pose.orientation.w = math.cos(self.counter * 0.0005)
+        self._stop.set()
+        print("[state_estimator] stopped", flush=True)
 
-        self.pose_pub.publish(pose)
+    def stop(self):
+        self._stop.set()
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = StateEstimator()
+def main():
+    est = StateEstimator()
 
-    executor = rclpy.executors.SingleThreadedExecutor()
-    executor.add_node(node)
+    def _sighandler(sig, _frame):
+        est.stop()
 
-    try:
-        while rclpy.ok():
-            executor.spin_once(timeout_sec=0.001)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        try:
-            if rclpy.ok():
-                rclpy.shutdown()
-        except Exception:
-            pass
+    signal.signal(signal.SIGTERM, _sighandler)
+    signal.signal(signal.SIGINT,  _sighandler)
+
+    est.run()
 
 
 if __name__ == "__main__":

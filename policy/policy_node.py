@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 """
-RL Policy Node - 50 Hz inference (simulated)
+RL Policy Node — 50 Hz hybrid: LCM-in (IMU) / ROS 2-out (action).
+
+Subscribes:  BUDDY_IMU via LCM (1000 Hz source, consumed at 50 Hz cadence)
+Publishes:   /policy/action         Twist          50 Hz  ROS 2
+             /policy/action_chunk   Float32MultiArray      ROS 2
+             /policy/latency        Float32MultiArray  1 Hz ROS 2
+
+50 Hz is below the LCM-only threshold but this node sits in the RT data path
+(reads IMU directly), so we subscribe from LCM to avoid DDS subscription
+overhead on the 1 kHz channel.
 """
 
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Imu
-from geometry_msgs.msg import Twist
-from std_msgs.msg import Float32MultiArray
+import sys
 import math
 import time
-import numpy as np
+import threading
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from std_msgs.msg import Float32MultiArray
+import lcm
+
+sys.path.insert(0, __file__.rsplit("/policy/", 1)[0])
+from lcm_types.robot_lcm_types import BuddyImu, BUDDY_IMU
 
 
 class PolicyNode(Node):
@@ -18,51 +31,57 @@ class PolicyNode(Node):
         super().__init__("policy")
 
         self.declare_parameter("rate", 50)
-        self.declare_parameter("sim", True)
+        self.declare_parameter("sim",  True)
         self.rate = self.get_parameter("rate").value
-        self.sim = self.get_parameter("sim").value
+        self.sim  = self.get_parameter("sim").value
 
-        self.action_pub = self.create_publisher(Twist, "/policy/action", 10)
-        self.action_chunk_pub = self.create_publisher(
-            Float32MultiArray, "/policy/action_chunk", 10
-        )
-        self.latency_pub = self.create_publisher(
-            Float32MultiArray, "/policy/latency", 10
-        )
+        self.action_pub       = self.create_publisher(Twist,             "/policy/action",       10)
+        self.action_chunk_pub = self.create_publisher(Float32MultiArray, "/policy/action_chunk", 10)
+        self.latency_pub      = self.create_publisher(Float32MultiArray, "/policy/latency",      10)
 
-        self.imu_sub = self.create_subscription(
-            Imu, "/buddy/imu", self.inference_callback, 10
-        )
+        self._lc             = lcm.LCM()
+        self._last_imu       = None
+        self._imu_lock       = threading.Lock()
+        self._inference_count = 0
+        self._latencies      = []
 
-        self.timer = self.create_timer(1.0 / self.rate, self.publish_action)
+        self._lc.subscribe(BUDDY_IMU, self._imu_handler)
+        self._lcm_thread = threading.Thread(target=self._lcm_loop, daemon=True)
+        self._lcm_thread.start()
 
-        self.inference_count = 0
-        self.latencies = []
+        self.create_timer(1.0 / self.rate, self._publish_action)
+        self.get_logger().info(f"Policy started at {self.rate} Hz (LCM IMU / ROS2 action)")
 
-        self.get_logger().info(f"Policy started at {self.rate} Hz (sim={self.sim})")
+    # ── LCM ───────────────────────────────────────────────────────────────────
+    def _lcm_loop(self):
+        while rclpy.ok():
+            self._lc.handle_timeout(1)
 
-    def inference_callback(self, msg):
-        self.inference_count += 1
+    def _imu_handler(self, channel, data):
+        with self._imu_lock:
+            self._last_imu = BuddyImu.decode(data)
+            self._inference_count += 1
 
-    def publish_action(self):
+    # ── ROS 2 timer ───────────────────────────────────────────────────────────
+    def _publish_action(self):
         start = time.time()
 
+        with self._imu_lock:
+            imu = self._last_imu
+
+        t = time.time()
         action = Twist()
-        action.linear.x = math.sin(time.time()) * 0.1
-        action.linear.y = math.cos(time.time()) * 0.1
-        action.linear.z = math.sin(time.time() * 0.5) * 0.05
-        action.angular.x = math.sin(time.time() * 0.1) * 0.01
-        action.angular.y = math.cos(time.time() * 0.1) * 0.01
-        action.angular.z = math.sin(time.time() * 0.05) * 0.005
+        action.linear.x  = math.sin(t)       * 0.1
+        action.linear.y  = math.cos(t)       * 0.1
+        action.linear.z  = math.sin(t * 0.5) * 0.05
+        action.angular.x = math.sin(t * 0.1) * 0.01
+        action.angular.y = math.cos(t * 0.1) * 0.01
+        action.angular.z = math.sin(t * 0.05) * 0.005
 
         chunk = Float32MultiArray()
         chunk.data = [
-            action.linear.x,
-            action.linear.y,
-            action.linear.z,
-            action.angular.x,
-            action.angular.y,
-            action.angular.z,
+            action.linear.x,  action.linear.y,  action.linear.z,
+            action.angular.x, action.angular.y, action.angular.z,
             0.0,
         ]
 
@@ -70,23 +89,17 @@ class PolicyNode(Node):
         self.action_chunk_pub.publish(chunk)
 
         latency = (time.time() - start) * 1000
+        self._latencies.append(latency)
+        if len(self._latencies) > 1000:
+            self._latencies.pop(0)
 
-        if self.inference_count % 100 == 0:
-            avg_latency = (
-                sum(self.latencies) / len(self.latencies) if self.latencies else 0
-            )
-            p99_latency = (
-                sorted(self.latencies)[int(len(self.latencies) * 0.99)]
-                if self.latencies
-                else 0
-            )
-            self.get_logger().info(
-                f"Latency: avg={avg_latency:.2f}ms, p99={p99_latency:.2f}ms"
-            )
-
-        self.latencies.append(latency)
-        if len(self.latencies) > 1000:
-            self.latencies.pop(0)
+        if self._inference_count % 100 == 0 and self._latencies:
+            avg = sum(self._latencies) / len(self._latencies)
+            p99 = sorted(self._latencies)[int(len(self._latencies) * 0.99)]
+            lat_msg = Float32MultiArray()
+            lat_msg.data = [avg, p99]
+            self.latency_pub.publish(lat_msg)
+            self.get_logger().info(f"Latency avg={avg:.2f}ms p99={p99:.2f}ms  imu_rx={self._inference_count}")
 
 
 def main(args=None):

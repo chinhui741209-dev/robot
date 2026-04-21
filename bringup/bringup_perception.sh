@@ -51,15 +51,23 @@ PERCEPTION_PID=$!
 echo "  Perception Node PID: $PERCEPTION_PID"
 
 sleep 1
+
+echo "[6/6] Starting Visualization Node..."
+nohup python3 "$POC_ROOT/perception/scripts/visualization_node.py" > "$POC_ROOT/logs/visualization.log" 2>&1 &
+VIS_PID=$!
+echo "  Visualization Node PID: $VIS_PID"
+
+sleep 1
 echo ""
 echo "=========================================="
 echo "Perception bring-up complete (nodes running)"
 echo "=========================================="
 echo ""
 echo "Topics:"
-echo "  /camera/image_raw - Raw camera image"
-echo "  /perception/detections - Detection results"
-echo "  /perception/latency - Inference latency"
+echo "  /camera/image_raw          - Raw camera image"
+echo "  /perception/detections     - Detection results"
+echo "  /perception/visualization  - Annotated image (bbox overlay)"
+echo "  /perception/latency        - Inference latency"
 echo ""
 echo "To view camera: ros2 run image_view image_view --ros-args -r image:=/camera/image_raw"
-echo "To stop: pkill -f camera_node.py; pkill -f perception_node.py"
+echo "To stop: pkill -f camera_node.py; pkill -f perception_node.py; pkill -f visualization_node.py"

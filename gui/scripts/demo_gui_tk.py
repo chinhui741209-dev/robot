@@ -8,10 +8,10 @@ import tkinter as tk
 from tkinter import ttk
 import cv2
 import numpy as np
+from PIL import Image as PILImage, ImageTk
 import rclpy
 from std_msgs.msg import String, Int32, Float32MultiArray
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
 import threading
 
 
@@ -112,6 +112,17 @@ class DemoGUI:
         self.step_frame = self.create_panel(grid, 1, 0, "TASK STEPS")
         self.motor_frame = self.create_panel(grid, 1, 1, "MOTOR STATUS")
 
+        # Camera display label inside the camera panel
+        self.camera_label = tk.Label(
+            self.camera_frame,
+            bg=self.colors["panel"],
+            text="Waiting for camera...",
+            fg=self.colors["muted"],
+            font=("JetBrains Mono", 10),
+        )
+        self.camera_label.pack(fill=tk.BOTH, expand=True)
+        self._photo_ref = None   # prevent GC
+
     def create_panel(self, parent, row, col, title):
         frame = tk.LabelFrame(
             parent,
@@ -161,7 +172,30 @@ class DemoGUI:
             pass
 
     def image_callback(self, msg):
-        pass
+        try:
+            frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
+                msg.height, msg.width, 3
+            )
+            # camera publishes bgr8 → convert to RGB for PIL
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # resize to fit panel (~480×270 keeps aspect ratio)
+            h, w = rgb.shape[:2]
+            max_w, max_h = 480, 270
+            scale = min(max_w / w, max_h / h)
+            new_w, new_h = int(w * scale), int(h * scale)
+            rgb = cv2.resize(rgb, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+
+            photo = ImageTk.PhotoImage(PILImage.fromarray(rgb))
+
+            # update must happen on the main Tkinter thread
+            def _update(p=photo):
+                self._photo_ref = p
+                self.camera_label.configure(image=p, text="")
+
+            self.root.after(0, _update)
+        except Exception as e:
+            pass
 
     def parsed_callback(self, msg):
         pass
