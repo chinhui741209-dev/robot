@@ -7,8 +7,13 @@ Perception Node - ONNX Object Detection
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from vision_msgs.msg import Detection2DArray, Detection2D, BoundingBox2D, ObjectHypothesisWithPose
-from std_msgs.msg import Header, Float32MultiArray
+from vision_msgs.msg import (
+    Detection2DArray,
+    Detection2D,
+    BoundingBox2D,
+    ObjectHypothesisWithPose,
+)
+from std_msgs.msg import Header, Float32MultiArray, String
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -39,6 +44,8 @@ class PerceptionNode(Node):
         self.detection_pub = self.create_publisher(
             Detection2DArray, "/perception/detections", 10
         )
+
+        self.scene_pub = self.create_publisher(String, "/perception/scene_state", 10)
 
         self.latency_pub = self.create_publisher(
             Float32MultiArray, "/perception/latency", 10
@@ -154,6 +161,22 @@ class PerceptionNode(Node):
                 detection_msg.detections.append(det_msg)
 
             self.detection_pub.publish(detection_msg)
+
+            import json
+
+            scene_objects = []
+            for det in detections:
+                scene_objects.append(
+                    {
+                        "class": det.get("class", "unknown"),
+                        "x": int(det["bbox"][0]),
+                        "y": int(det["bbox"][1]),
+                        "confidence": float(det["confidence"]),
+                    }
+                )
+            scene_msg = String()
+            scene_msg.data = json.dumps({"objects": scene_objects})
+            self.scene_pub.publish(scene_msg)
 
             latency = (time.time() - start_time) * 1000
             latency_msg = Float32MultiArray()

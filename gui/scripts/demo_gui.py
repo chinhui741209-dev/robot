@@ -12,6 +12,7 @@ import time
 import numpy as np
 import cv2
 import rclpy
+from rclpy.node import Node
 from std_msgs.msg import String, Int32
 from sensor_msgs.msg import Image
 
@@ -19,6 +20,14 @@ try:
     from cv_bridge import CvBridge
 except ImportError:
     CvBridge = None
+
+try:
+    from PIL import Image as PILImage, ImageTk
+    from PIL import Image as PILImageModule
+except ImportError as e:
+    print(f"PIL import error: {e}")
+    PILImage = None
+    ImageTk = None
 
 
 class DemoGUI:
@@ -251,7 +260,7 @@ class DemoGUI:
         def ros_thread():
             try:
                 rclpy.init()
-                self.ros_node = rclpy.node.Node("demo_gui")
+                self.ros_node = Node("demo_gui")
 
                 self.image_sub = self.ros_node.create_subscription(
                     Image, "/camera/image_raw", self.image_callback, 10
@@ -288,11 +297,17 @@ class DemoGUI:
         try:
             if self.bridge:
                 cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-                self.latest_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+                self.latest_image = cv_image  # already BGR
             else:
-                self.latest_image = np.zeros((480, 640, 3), dtype=np.uint8)
+                h = int(msg.height)
+                w = int(msg.width)
+                data = np.frombuffer(msg.data, dtype=np.uint8)
+                img = data.reshape((h, w, 3))
+                self.latest_image = img  # keep BGR
         except Exception as e:
-            print(f"Image error: {e}")
+            print(
+                f"Image error: {e}, height={msg.height}, width={msg.width}, data_len={len(msg.data) if hasattr(msg, 'data') else 'N/A'}"
+            )
 
     def parsed_callback(self, msg):
         self.root.after(
@@ -305,19 +320,22 @@ class DemoGUI:
     def update_camera_loop(self):
         if self.latest_image is not None:
             try:
-                import cv2
+                if PILImage and ImageTk:
+                    import cv2
 
-                img = cv2.resize(self.latest_image, (640, 480))
-                h, w, c = img.shape
-                data = img.tobytes()
-                photo = tk.PhotoImage(width=w, height=h)
-                photo.put(data)
-                self.camera_label.configure(image=photo, text="")
-                self.camera_label.image = photo
+                    img = cv2.resize(self.latest_image, (960, 720))
+                    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    photo = ImageTk.PhotoImage(PILImage.fromarray(rgb))
+                    self.camera_label.configure(image=photo, text="")
+                    self.camera_label.image = photo
+                else:
+                    self.camera_label.configure(
+                        text="PIL not available", fg=self.colors["error"]
+                    )
             except Exception as e:
                 print(f"Camera display error: {e}")
 
-        self.root.after(33, self.update_camera_loop)
+        self.root.after(20, self.update_camera_loop)
 
     def send_command(self, event=None):
         cmd = self.command_entry.get()
@@ -332,10 +350,13 @@ class DemoGUI:
 
         if parsed:
             self.parsed_label.config(
-                text=f"intent: {parsed.get('intent', 'N/A')}\nsource: {parsed.get('source', 'N/A')}\ntarget: {parsed.get('target', 'N/A')}",
-                fg=self.colors["active"],
+                text=f"Sending...",
+                fg=self.colors["muted"],
             )
-            self.simulate_execution()
+            if hasattr(self, "command_pub"):
+                msg = String()
+                msg.data = cmd
+                self.command_pub.publish(msg)
         else:
             self.parsed_label.config(text="Unknown command", fg=self.colors["error"])
 
@@ -347,6 +368,11 @@ class DemoGUI:
                 "target": "box",
             },
             "把筆放到箱子中": {
+                "intent": "pick_and_place",
+                "source": "pen",
+                "target": "box",
+            },
+            "把筆放進箱子": {
                 "intent": "pick_and_place",
                 "source": "pen",
                 "target": "box",

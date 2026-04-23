@@ -24,42 +24,42 @@ class TaskParserNode(Node):
 
         self.get_logger().info("Task Parser Node started")
 
-self.commands = {
+        self.commands = {
             "把筆放到盒子中": {
                 "intent": "pick_and_place",
                 "source": "pen",
-                "target": "box"
+                "target": "box",
             },
             "把筆放到箱子中": {
                 "intent": "pick_and_place",
                 "source": "pen",
-                "target": "box"
+                "target": "box",
             },
             "pick pen to box": {
                 "intent": "pick_and_place",
                 "source": "pen",
-                "target": "box"
+                "target": "box",
             },
             "把蘋果放到盒子中": {
                 "intent": "pick_and_place",
                 "source": "apple",
-                "target": "box"
+                "target": "box",
             },
             "把橘子放到盒子中": {
-                "intent": "pick_and_place", 
+                "intent": "pick_and_place",
                 "source": "orange",
-                "target": "box"
+                "target": "box",
             },
             "pick apple to box": {
                 "intent": "pick_and_place",
                 "source": "apple",
-                "target": "box"
+                "target": "box",
             },
             "pick orange to box": {
                 "intent": "pick_and_place",
                 "source": "orange",
-                "target": "box"
-            }
+                "target": "box",
+            },
         }
 
     def command_callback(self, msg):
