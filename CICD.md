@@ -43,4 +43,16 @@ chmod +x setup_orin_runner.sh
 3. Orin 會自動執行 `sudo systemctl restart robot-core.service`。
 4. 您可以從 GitHub 的 **Actions** 頁籤查看部署進度。
 
-<!-- CI/CD Test Commit at Thu Apr 23 13:32:02 CST 2026 -->
+## 常見問題排除 (Troubleshooting)
+
+### 錯誤：「Failed: Must run from runner root or install is corrupt」
+
+如果您在執行 `svc.sh`（例如重啟服務）時遇到此錯誤，這是因為 `svc.sh` 必須在 Runner 的安裝目錄下執行。
+
+**解決方法：**
+請切換到 Runner 目錄後再執行指令：
+```bash
+cd ~/actions-runner && sudo ./svc.sh restart
+```
+
+<!-- CI/CD Test Commit at Thu Apr 23 15:45:00 CST 2026 -->
