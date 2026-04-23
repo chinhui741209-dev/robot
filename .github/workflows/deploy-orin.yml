@@ -1,0 +1,32 @@
+name: Deploy to Orin
+
+on:
+  push:
+    branches:
+      - main # 當推送至 main 分支時觸發
+
+jobs:
+  deploy:
+    runs-on: self-hosted # 指定由 Orin 上的 self-hosted runner 執行
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync files to Orin deployment directory
+        run: |
+          # 使用 rsync 將 runner 下載的程式碼同步到目標資料夾
+          # 排除 .git 與 .github 避免覆蓋
+          rsync -av --delete ./ /home/nvidia/poc/poc-orin/ \
+            --exclude '.git' \
+            --exclude '.github'
+
+      - name: Restart robot-core service
+        run: |
+          # 透過 sudo 重啟系統服務
+          sudo systemctl restart robot-core.service
+
+      - name: Verify service status
+        run: |
+          # 檢查服務狀態確保啟動成功
+          systemctl is-active robot-core.service || (echo "Service failed to start" && exit 1)
