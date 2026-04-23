@@ -81,12 +81,21 @@ echo "Configuring the runner..."
 
 # 5. Install as a Service
 echo ""
-echo "[Step 4/4] Installing runner as a system service..."
+echo "[Step 4/5] Installing runner as a system service..."
 sudo ./svc.sh install nvidia
 sudo ./svc.sh start
 
+# 6. Configure GUI Autostart and Watchdog
+echo ""
+echo "[Step 5/5] Configuring GUI Autostart and Watchdog..."
+mkdir -p "$HOME/.config/autostart"
+chmod +x "$HOME/poc/poc-orin/gui/scripts/gui_watchdog.sh"
+ln -sf "$HOME/poc/poc-orin/services/autostart/robot-gui.desktop" "$HOME/.config/autostart/"
+
 echo ""
 echo "--- Setup Complete! ---"
-echo "Your Orin is now connected to GitHub Actions."
-echo "The service status is:"
+echo "1. Your Orin is connected to GitHub Actions."
+echo "2. GUI Watchdog is configured to start on login."
+echo "Please LOG OUT and LOG IN again to see the GUI."
+echo ""
 sudo ./svc.sh status
