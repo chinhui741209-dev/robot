@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Exec=/usr/bin/python3 /home/nvidia/poc/poc-orin/gui/scripts/demo_gui_tk.py
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=RobotDemoGUI
+Comment=Start Robot Demo GUI on login
