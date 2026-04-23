@@ -23,8 +23,11 @@ jobs:
 
       - name: Trigger GUI Auto-Restart (Watchdog)
         run: |
-          # 殺掉舊的 GUI 視窗，位於桌面的 Watchdog 會在 3 秒後自動重生新版 GUI
-          pkill -f demo_gui_tk.py || true
+          echo "Attempting to kill old GUI processes..."
+          # 嘗試多種匹配方式來殺掉 Python GUI
+          pkill -u nvidia -f "python3.*demo_gui_tk.py" || true
+          pkill -u nvidia -f "demo_gui_tk.py" || true
+          echo "Kill command sent."
 
       - name: Restart robot-core service
         run: |
