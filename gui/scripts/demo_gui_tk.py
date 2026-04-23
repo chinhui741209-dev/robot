@@ -4,6 +4,11 @@ Demo GUI - Tech-style interface for VLA POC Demo
  Uses tkinter (available) with custom styling for tech look
 """
 
+import os
+# Force set DISPLAY for systemd/background services
+if "DISPLAY" not in os.environ:
+    os.environ["DISPLAY"] = ":0"
+
 import tkinter as tk
 from tkinter import ttk
 import cv2
