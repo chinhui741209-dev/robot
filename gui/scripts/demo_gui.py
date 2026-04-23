@@ -337,7 +337,7 @@ class DemoGUI:
 
         self.root.after(20, self.update_camera_loop)
 
-def send_command(self, event=None):
+    def send_command(self, event=None):
         cmd = self.command_entry.get()
         if not cmd:
             return
@@ -354,7 +354,7 @@ def send_command(self, event=None):
                 fg=self.colors["muted"],
             )
             print(f"[GUI] Publishing command: {cmd}")
-            if hasattr(self, 'command_pub') and self.command_pub:
+            if hasattr(self, "command_pub") and self.command_pub:
                 msg = String()
                 msg.data = cmd
                 self.command_pub.publish(msg)
