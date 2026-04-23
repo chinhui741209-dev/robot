@@ -24,10 +24,16 @@ jobs:
       - name: Trigger GUI Auto-Restart (Watchdog)
         run: |
           echo "Attempting to kill old GUI processes..."
-          # 嘗試多種匹配方式來殺掉 Python GUI
-          pkill -u nvidia -f "python3.*demo_gui_tk.py" || true
-          pkill -u nvidia -f "demo_gui_tk.py" || true
-          echo "Kill command sent."
+          # 1. 使用 pkill 強制殺掉匹配路徑的行程
+          pkill -9 -f "demo_gui_tk.py" || true
+          
+          # 2. 備援方案：手動搜尋 PID 並砍掉
+          GUI_PID=$(ps aux | grep "demo_gui_tk.py" | grep -v grep | awk '{print $2}')
+          if [ ! -z "$GUI_PID" ]; then
+            echo "Found GUI PID: $GUI_PID, killing..."
+            kill -9 $GUI_PID || true
+          fi
+          echo "Kill command sent. Watchdog should restart it in 3 seconds."
 
       - name: Restart robot-core service
         run: |

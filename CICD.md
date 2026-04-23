@@ -55,4 +55,4 @@ chmod +x setup_orin_runner.sh
 cd ~/actions-runner && sudo ./svc.sh restart
 ```
 
-<!-- CI/CD Test Commit at Thu Apr 23 15:45:00 CST 2026 -->
+<!-- CI/CD Test Commit at Thu Apr 23 17:15:00 CST 2026 -->
