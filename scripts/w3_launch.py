@@ -271,16 +271,35 @@ def main(args=None):
     try:
         rclpy.init(args=args)
         node = W3Node()
-        executor = rclpy.executors.SingleThreadedExecutor()
+        
+        # Add backend logic nodes for end-to-end demo
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        from task_parser.scripts.task_parser_node import TaskParserNode
+        from planner.scripts.planner_node import PlannerNode
+        from robot_bridge.scripts.robot_bridge_node import RobotBridgeNode
+        
+        task_parser = TaskParserNode()
+        planner = PlannerNode()
+        robot_bridge = RobotBridgeNode()
+        
+        executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
         executor.add_node(node)
+        executor.add_node(task_parser)
+        executor.add_node(planner)
+        executor.add_node(robot_bridge)
 
         print("=" * 50)
         print("W3 Launch - E2E Demo System")
         print("=" * 50)
         print("Running... Press Ctrl-C to stop")
 
-        while rclpy.ok():
-            executor.spin_once(timeout_sec=0.1)
+        try:
+            executor.spin()
+        except KeyboardInterrupt:
+            pass
 
     except KeyboardInterrupt:
         pass
@@ -289,6 +308,9 @@ def main(args=None):
     finally:
         try:
             node.destroy_node()
+            task_parser.destroy_node()
+            planner.destroy_node()
+            robot_bridge.destroy_node()
         except:
             pass
         try:

@@ -133,14 +133,38 @@ class DemoGUI:
         self._photo_ref = None  # prevent GC
 
         # Command display
+        inner_cmd = tk.Frame(self.command_frame, bg=self.colors["panel"])
+        inner_cmd.pack(fill=tk.BOTH, expand=True)
+
+        self.command_entry = tk.Entry(
+            inner_cmd,
+            bg=self.colors["bg"],
+            fg=self.colors["text"],
+            insertbackground=self.colors["accent"],
+            font=("JetBrains Mono", 12),
+            relief=tk.FLAT,
+        )
+        self.command_entry.pack(fill=tk.X, padx=5, pady=5)
+        self.command_entry.bind("<Return>", self.send_command)
+
+        tk.Button(
+            inner_cmd,
+            text="EXECUTE",
+            command=self.send_command,
+            bg=self.colors["accent"],
+            fg=self.colors["bg"],
+            font=("JetBrains Mono", 10, "bold"),
+            relief=tk.FLAT,
+        ).pack(fill=tk.X, padx=5, pady=5)
+
         self.command_label = tk.Label(
-            self.command_frame,
+            inner_cmd,
             text="Waiting...",
             fg=self.colors["muted"],
             font=("JetBrains Mono", 12),
             bg=self.colors["panel"],
         )
-        self.command_label.pack(fill=tk.BOTH, expand=True)
+        self.command_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Task steps display
         self.step_label = tk.Label(
@@ -277,6 +301,19 @@ class DemoGUI:
                 label.configure(text=f"{m}: {self.motor_values[m]:.2f}")
 
         self.root.after(0, _update)
+
+    def send_command(self, event=None):
+        cmd = self.command_entry.get().strip()
+        if not cmd:
+            return
+        
+        self.command_entry.delete(0, tk.END)
+        self.command_label.configure(text=f"Sent: {cmd}")
+        
+        if hasattr(self, "command_pub") and self.command_pub:
+            msg = String()
+            msg.data = cmd
+            self.command_pub.publish(msg)
 
     def run(self):
         self.root.mainloop()
