@@ -5,6 +5,11 @@ echo "GUI Watchdog started..."
 
 while true; do
     echo "Starting GUI process..."
+    
+    # Load ROS 2 environment
+    source /opt/ros/humble/setup.bash
+    export PYTHONPATH=$PYTHONPATH:/home/nvidia/poc/poc-orin
+    
     /usr/bin/python3 /home/nvidia/poc/poc-orin/gui/scripts/demo_gui_tk.py
     
     echo "GUI process exited or was killed."
