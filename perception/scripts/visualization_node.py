@@ -8,9 +8,10 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 import cv2
 import numpy as np
+import json
 from collections import deque
 
 
@@ -33,14 +34,31 @@ class VisualizationNode(Node):
         self.detection_sub = self.create_subscription(
             Detection2DArray, detection_topic, self.detection_callback, 10
         )
+        
+        self.command_sub = self.create_subscription(
+            String, "/task/parsed_command", self.command_callback, 10
+        )
 
         self.visualization_pub = self.create_publisher(Image, output_topic, 10)
 
         self.latest_detections = None
         self.latest_image = None
         self.image_buffer = deque(maxlen=5)
+        
+        # State for active task targets
+        self.active_source = None
+        self.active_target = None
 
         self.get_logger().info("Visualization node started")
+
+    def command_callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            self.active_source = data.get("source")
+            self.active_target = data.get("target")
+            self.get_logger().info(f"Targeting active: {self.active_source} -> {self.active_target}")
+        except Exception as e:
+            self.get_logger().error(f"Error parsing command in visualization: {e}")
 
     def detection_callback(self, msg):
         self.latest_detections = msg
@@ -67,15 +85,29 @@ class VisualizationNode(Node):
                     class_id = det.results[0].hypothesis.class_id
                     label = f"{class_id}: {conf:.2f}"
 
-                    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    # Default styling (Green)
+                    color = (0, 255, 0)
+                    thickness = 2
+
+                    # Highlight based on active command
+                    if class_id == self.active_source:
+                        color = (0, 0, 255) # Red for source/target to pick
+                        thickness = 4
+                        label = f"[TARGET] {label}"
+                    elif class_id == self.active_target:
+                        color = (255, 0, 0) # Blue for destination
+                        thickness = 3
+                        label = f"[DEST] {label}"
+
+                    cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
                     cv2.putText(
                         image,
                         label,
                         (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
-                        (0, 255, 0),
-                        2,
+                        color,
+                        thickness,
                     )
 
             vis_msg = Image()
