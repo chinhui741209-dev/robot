@@ -38,7 +38,17 @@ else
     echo "  Perception: Not found"
 fi
 
-echo "[3/6] Starting Task Parser..."
+echo "[2.5/6] Starting Visualization Node..."
+if [ -f "$POC_ROOT/perception/scripts/visualization_node.py" ]; then
+    nohup python3 "$POC_ROOT/perception/scripts/visualization_node.py" > "$POC_ROOT/logs/visualization.log" 2>&1 &
+    VIS_PID=$!
+    echo "  Visualization PID: $VIS_PID"
+    sleep 1
+else
+    echo "  Visualization: Not found (skipping)"
+fi
+
+echo "[4/6] Starting Task Parser..."
 if [ -f "$POC_ROOT/task_parser/scripts/task_parser_node.py" ]; then
     nohup python3 "$POC_ROOT/task_parser/scripts/task_parser_node.py" > "$POC_ROOT/logs/task_parser.log" 2>&1 &
     PARSER_PID=$!
@@ -48,7 +58,7 @@ else
     echo "  Task Parser: Not found"
 fi
 
-echo "[4/6] Starting Planner..."
+echo "[5/6] Starting Planner..."
 if [ -f "$POC_ROOT/planner/scripts/planner_node.py" ]; then
     nohup python3 "$POC_ROOT/planner/scripts/planner_node.py" > "$POC_ROOT/logs/planner.log" 2>&1 &
     PLANNER_PID=$!
@@ -58,7 +68,7 @@ else
     echo "  Planner: Not found"
 fi
 
-echo "[5/6] Starting Robot Bridge..."
+echo "[6/6] Starting Robot Bridge..."
 if [ -f "$POC_ROOT/robot_bridge/scripts/robot_bridge_node.py" ]; then
     nohup python3 "$POC_ROOT/robot_bridge/scripts/robot_bridge_node.py" > "$POC_ROOT/logs/robot_bridge.log" 2>&1 &
     BRIDGE_PID=$!
@@ -68,7 +78,7 @@ else
     echo "  Robot Bridge: Not found"
 fi
 
-echo "[6/6] Starting GUI..."
+echo "[7/7] Starting GUI..."
 if [ -f "$POC_ROOT/gui/scripts/demo_gui.py" ]; then
     nohup python3 "$POC_ROOT/gui/scripts/demo_gui.py" > "$POC_ROOT/logs/gui.log" 2>&1 &
     GUI_PID=$!

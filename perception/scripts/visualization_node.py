@@ -64,16 +64,16 @@ class VisualizationNode(Node):
                     y2 = int(y + h / 2)
 
                     conf = det.results[0].hypothesis.confidence
+                    class_id = det.results[0].hypothesis.class_id
+                    label = f"{class_id}: {conf:.2f}"
 
                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-                    label = f"{conf:.2f}"
                     cv2.putText(
                         image,
                         label,
                         (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
+                        0.6,
                         (0, 255, 0),
                         2,
                     )
