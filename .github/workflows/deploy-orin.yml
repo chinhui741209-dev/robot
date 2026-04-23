@@ -21,6 +21,11 @@ jobs:
             --exclude '.git' \
             --exclude '.github'
 
+      - name: Write version file
+        run: |
+          echo "Build: ${{ github.sha }}" | cut -c 1-14 > /home/nvidia/poc/poc-orin/VERSION.txt
+
+
       - name: Trigger GUI Auto-Restart (Watchdog)
         run: |
           echo "Attempting to kill old GUI processes..."

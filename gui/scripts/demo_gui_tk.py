@@ -24,7 +24,14 @@ import threading
 class DemoGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("VLA POC Demo - [V1.0.2 Stable]")
+        version = "Unknown"
+        version_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "VERSION.txt")
+        try:
+            with open(version_path, "r") as f:
+                version = f.read().strip()
+        except Exception:
+            pass
+        self.root.title(f"VLA POC Demo - [{version}]")
         self.root.geometry("1280x720")
         self.root.configure(bg="#0a0a14")
 
