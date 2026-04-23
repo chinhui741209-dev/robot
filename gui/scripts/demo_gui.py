@@ -337,7 +337,7 @@ class DemoGUI:
 
         self.root.after(20, self.update_camera_loop)
 
-    def send_command(self, event=None):
+def send_command(self, event=None):
         cmd = self.command_entry.get()
         if not cmd:
             return
@@ -350,15 +350,19 @@ class DemoGUI:
 
         if parsed:
             self.parsed_label.config(
-                text=f"Sending...",
+                text=f"Sending: {cmd}",
                 fg=self.colors["muted"],
             )
-            if hasattr(self, "command_pub"):
+            print(f"[GUI] Publishing command: {cmd}")
+            if hasattr(self, 'command_pub') and self.command_pub:
                 msg = String()
                 msg.data = cmd
                 self.command_pub.publish(msg)
+            else:
+                print(f"[GUI] ERROR: command_pub not initialized!")
         else:
-            self.parsed_label.config(text="Unknown command", fg=self.colors["error"])
+            print(f"[GUI] Unknown command: {cmd}")
+            self.parsed_label.config(text=f"Unknown: {cmd}", fg=self.colors["error"])
 
     def parse_command(self, cmd):
         commands = {
@@ -372,7 +376,17 @@ class DemoGUI:
                 "source": "pen",
                 "target": "box",
             },
+            "把筆放到箱子": {
+                "intent": "pick_and_place",
+                "source": "pen",
+                "target": "box",
+            },
             "把筆放進箱子": {
+                "intent": "pick_and_place",
+                "source": "pen",
+                "target": "box",
+            },
+            "把筆放盒子": {
                 "intent": "pick_and_place",
                 "source": "pen",
                 "target": "box",
