@@ -10,20 +10,12 @@ echo "=========================================="
 echo "Bring-up: Complete System"
 echo "=========================================="
 
-echo "[Step 1/3] Core bring-up..."
+echo "[Step 1/1] Core bring-up..."
 bash "$SCRIPT_DIR/bringup_core.sh"
 
 echo ""
-echo "[Step 2/3] Control bring-up..."
-bash "$SCRIPT_DIR/bringup_control.sh"
-
-echo ""
-echo "[Step 3/3] Perception bring-up..."
-bash "$SCRIPT_DIR/bringup_perception.sh"
-
-echo ""
 echo "=========================================="
-echo "Complete system bring-up done!"
+echo "Core system bring-up done! (Skipping conflicting Control/Perception for Sim Demo)"
 echo "=========================================="
 echo ""
 echo ">>> Auto-starting Demo as requested by CI/CD configuration..."
