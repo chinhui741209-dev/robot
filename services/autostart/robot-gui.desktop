@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Exec=/usr/bin/python3 /home/nvidia/poc/poc-orin/gui/scripts/demo_gui_tk.py
+Exec=/bin/bash /home/nvidia/poc/poc-orin/gui/scripts/gui_watchdog.sh
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true

@@ -21,6 +21,11 @@ jobs:
             --exclude '.git' \
             --exclude '.github'
 
+      - name: Trigger GUI Auto-Restart (Watchdog)
+        run: |
+          # 殺掉舊的 GUI 視窗，位於桌面的 Watchdog 會在 3 秒後自動重生新版 GUI
+          pkill -f demo_gui_tk.py || true
+
       - name: Restart robot-core service
         run: |
           # 透過 sudo 重啟系統服務

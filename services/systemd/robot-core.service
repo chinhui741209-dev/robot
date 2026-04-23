@@ -12,6 +12,7 @@ Environment="ROS2Daemon=False"
 Environment="PYTHONPATH=/home/nvidia/poc/poc-orin:$PYTHONPATH"
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/nvidia/.Xauthority"
+Environment="HOME=/home/nvidia"
 ExecStartPre=/bin/bash -c 'source /opt/ros/humble/setup.bash && pkill -9 ros2-daemon 2>/dev/null || true'
 ExecStart=/home/nvidia/poc/poc-orin/bringup/bringup_all.sh
 Restart=on-failure
