@@ -50,7 +50,7 @@ class W3Node(Node):
         # =====================
         # PERCEPTION (15 Hz)
         # =====================
-        self.camera_pub = self.create_publisher(Image, "/perception/camera", 10)
+        self.camera_pub = self.create_publisher(Image, "/camera/image_raw", 10)
         self.lidar_pub = self.create_publisher(
             Float32MultiArray, "/perception/lidar", 10
         )
