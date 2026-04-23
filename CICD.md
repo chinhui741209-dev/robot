@@ -42,3 +42,5 @@ chmod +x setup_orin_runner.sh
 2. Orin 會拉取最新程式碼並同步到 `/home/nvidia/poc/poc-orin`。
 3. Orin 會自動執行 `sudo systemctl restart robot-core.service`。
 4. 您可以從 GitHub 的 **Actions** 頁籤查看部署進度。
+
+<!-- CI/CD Test Commit at Thu Apr 23 13:32:02 CST 2026 -->
