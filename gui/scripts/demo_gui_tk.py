@@ -24,7 +24,7 @@ import threading
 class DemoGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("VLA POC Demo - [V1.0.1 Auto-Updated]")
+        self.root.title("VLA POC Demo - [V1.0.2 Stable]")
         self.root.geometry("1280x720")
         self.root.configure(bg="#0a0a14")
 
