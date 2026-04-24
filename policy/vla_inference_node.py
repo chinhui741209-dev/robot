@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 VLA Inference Node - Embodied AI Brain
-Integrates Hugging Face Qwen2.5-VL / UnifoLM-VLA for real End-to-End inference.
+Integrates Hugging Face OpenVLA-7B for real End-to-End inference.
 Falls back to Mock mode if dependencies are missing.
 """
 
@@ -12,14 +12,12 @@ from sensor_msgs.msg import Image
 import numpy as np
 import cv2
 import time
-import re
 
 # Try importing AI libraries
 try:
     import torch
     from PIL import Image as PILImage
-    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-    from qwen_vl_utils import process_vision_info
+    from transformers import AutoModelForVision2Seq, AutoProcessor
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
@@ -28,8 +26,8 @@ class VlaInferenceNode(Node):
     def __init__(self):
         super().__init__("vla_inference_node")
         
-        # Params
-        self.declare_parameter("model_path", "/home/nvidia/poc/models/unifolm-vla")
+        # Params (Updated for OpenVLA)
+        self.declare_parameter("model_path", "/home/nvidia/poc/models/openvla-7b")
         self.declare_parameter("use_real_ai", True)
         
         self.model_path = self.get_parameter("model_path").value
@@ -48,24 +46,26 @@ class VlaInferenceNode(Node):
         
         self.get_logger().info("==========================================")
         if self.use_real_ai:
-            self.get_logger().info(f"🧠 INITIALIZING REAL VLA MODEL from {self.model_path}...")
+            self.get_logger().info(f"🧠 INITIALIZING OpenVLA-7B MODEL from {self.model_path}...")
             self.init_ai_model()
-            self.get_logger().info("✅ VLA Model Loaded on GPU!")
+            self.get_logger().info("✅ OpenVLA Model Loaded on GPU!")
         else:
             self.get_logger().warn("⚠️ AI libraries not found or disabled. Running in MOCK Mode.")
         self.get_logger().info("==========================================")
 
     def init_ai_model(self):
         try:
-            # Load Model in bfloat16 to fit in Orin RAM
-            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+            # OpenVLA is massive, load in bfloat16
+            self.processor = AutoProcessor.from_pretrained(self.model_path, trust_remote_code=True)
+            self.model = AutoModelForVision2Seq.from_pretrained(
                 self.model_path, 
+                attn_implementation="flash_attention_2",  # Optimal for Orin
                 torch_dtype=torch.bfloat16, 
-                device_map="auto"
-            )
-            self.processor = AutoProcessor.from_pretrained(self.model_path)
+                low_cpu_mem_usage=True, 
+                trust_remote_code=True
+            ).to("cuda:0")
         except Exception as e:
-            self.get_logger().error(f"Failed to load VLA model: {e}")
+            self.get_logger().error(f"Failed to load OpenVLA model: {e}")
             self.use_real_ai = False
 
     def img_callback(self, msg):
@@ -73,7 +73,7 @@ class VlaInferenceNode(Node):
 
     def cmd_callback(self, msg):
         if self.is_processing:
-            self.get_logger().warn("VLA is busy generating action chunks.")
+            self.get_logger().warn("VLA is busy generating skill commands.")
             return
             
         command = msg.data
@@ -89,12 +89,12 @@ class VlaInferenceNode(Node):
             self.run_mock_vla(command)
 
     def run_real_vla(self, command):
-        self.get_logger().info(f"🧠 [Real VLA] Processing Task: {command}")
+        self.get_logger().info(f"🧠 [OpenVLA] Processing Task: {command}")
         
         # 1. Decode ROS Image to PIL
         data = np.frombuffer(self.latest_image.data, dtype=np.uint8)
         try:
-            bytes_per_pixel = self.latest_image.step // self.latest_image.width
+            bytes_per_pixel = self.latest_image.step // self.latest_image.width if self.latest_image.width > 0 else 3
             frame = data.reshape(self.latest_image.height, self.latest_image.width, bytes_per_pixel)
             if bytes_per_pixel == 3:
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -106,72 +106,51 @@ class VlaInferenceNode(Node):
             self.is_processing = False
             return
 
-        # 2. Construct Multimodal Prompt
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": pil_image},
-                    {"type": "text", "text": f"Task: {command}. Predict the next motor actions."}
-                ]
-            }
-        ]
+        # 2. OpenVLA Prompt Engineering
+        # OpenVLA expects: "In: What action should the robot take to [instruction]?
+Out:"
+        prompt = f"In: What action should the robot take to {command}?\nOut:"
         
         # 3. Inference
         try:
-            text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            image_inputs, video_inputs = process_vision_info(messages)
+            inputs = self.processor(prompt, pil_image).to("cuda:0", dtype=torch.bfloat16)
             
-            inputs = self.processor(
-                text=[text], 
-                images=image_inputs, 
-                videos=video_inputs, 
-                padding=True, 
-                return_tensors="pt"
-            ).to("cuda")
-            
-            # Publish step 0: Generating
             step_msg = Int32(); step_msg.data = 0; self.step_pub.publish(step_msg)
             
             with torch.no_grad():
-                generated_ids = self.model.generate(**inputs, max_new_tokens=128)
+                # OpenVLA generates action tokens directly
+                action = self.model.predict_action(**inputs, unnorm_key="bridge_orig")
             
-            generated_ids_trimmed = [
-                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-            ]
-            output_text = self.processor.batch_decode(
-                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-            )[0]
+            # Publish step indicating generation is done
+            step_msg = Int32(); step_msg.data = 5; self.step_pub.publish(step_msg)
             
-            self.get_logger().info(f"[VLA Output]: {output_text}")
-            
-            # 4. Parse Action Chunk (assuming output like: [15.2, 3.4, 0.0, 1.0])
-            actions = self.extract_actions(output_text)
-            if actions:
-                step_msg = Int32(); step_msg.data = 5; self.step_pub.publish(step_msg)
+            # 4. Map OpenVLA action (e.g. 7-DoF) to our 4-DoF system
+            # Extract relevant dimensions (x, y, z, gripper) depending on what OpenVLA predicted
+            # Assuming standard OpenVLA output: [x, y, z, roll, pitch, yaw, gripper]
+            actions = list(action)
+            if len(actions) >= 7:
+                # Mock mapping to [shoulder, elbow, wrist, gripper]
+                mapped_action = [
+                    float(actions[0] * 100), # Map X to Shoulder
+                    float(actions[1] * 100), # Map Y to Elbow
+                    float(actions[2] * 100), # Map Z to Wrist
+                    float(actions[6])        # Gripper state
+                ]
+                
                 chunk = Float32MultiArray()
-                chunk.data = actions
+                chunk.data = mapped_action
                 self.action_pub.publish(chunk)
+                self.get_logger().info(f"[OpenVLA Output]: {mapped_action}")
                 
             step_msg = Int32(); step_msg.data = 10; self.step_pub.publish(step_msg)
             
         except Exception as e:
-            self.get_logger().error(f"VLA Inference Failed: {e}")
+            self.get_logger().error(f"OpenVLA Inference Failed: {e}")
             
         self.is_processing = False
 
-    def extract_actions(self, text):
-        # Extract comma separated floats from brackets
-        match = re.search(r"\[([\d.,\-\s]+)\]", text)
-        if match:
-            try:
-                return [float(x.strip()) for x in match.group(1).split(",")]
-            except ValueError:
-                pass
-        return [0.0, 0.0, 0.0, 0.0]
-
     def run_mock_vla(self, command):
-        self.get_logger().info(f"🤖 [Mock VLA] Processing Task: {command}")
+        self.get_logger().info(f"🤖 [Mock OpenVLA] Processing Task: {command}")
         for step_val in [0, 2, 5, 8, 10]:
             step_msg = Int32()
             step_msg.data = step_val
