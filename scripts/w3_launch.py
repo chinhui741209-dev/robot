@@ -40,14 +40,6 @@ class W3Node(Node):
         self.tf_pub = self.create_publisher(Twist, "/tf", 10)
 
         # =====================
-        # POLICY (50 Hz)
-        # =====================
-        self.action_pub = self.create_publisher(Twist, "/policy/action", 10)
-        self.action_chunk_pub = self.create_publisher(
-            Float32MultiArray, "/policy/action_chunk", 10
-        )
-
-        # =====================
         # PERCEPTION (15 Hz)
         # =====================
         self.camera_pub = self.create_publisher(Image, "/camera/image_raw", 10)
@@ -182,33 +174,6 @@ class W3Node(Node):
                 self.tf_pub.publish(tf)
 
             # =====================
-            # POLICY (50 Hz = every 20 tick)
-            # =====================
-            if self.counter % 20 == 0:
-                action = Twist()
-                action.linear.x = math.sin(time.time()) * 0.1
-                action.linear.y = math.cos(time.time()) * 0.1
-                action.linear.z = math.sin(time.time() * 0.5) * 0.05
-                action.angular.x = math.sin(time.time() * 0.1) * 0.01
-                action.angular.y = math.cos(time.time() * 0.1) * 0.01
-                action.angular.z = math.sin(time.time() * 0.05) * 0.005
-
-                self.action_pub.publish(action)
-
-                # Action chunk
-                chunk = Float32MultiArray()
-                chunk.data = [
-                    action.linear.x,
-                    action.linear.y,
-                    action.linear.z,
-                    action.angular.x,
-                    action.angular.y,
-                    action.angular.z,
-                    0.0,
-                ]
-                self.action_chunk_pub.publish(chunk)
-
-            # =====================
             # PERCEPTION (15 Hz = every 67 tick)
             # =====================
             if self.counter % 67 == 0:
@@ -265,14 +230,17 @@ def main(args=None):
         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         from policy.vla_inference_node import VlaInferenceNode
+        from skill.scripts.skill_node import SkillNode
         from robot_bridge.scripts.robot_bridge_node import RobotBridgeNode
         
         vla_node = VlaInferenceNode()
+        skill_node = SkillNode()
         robot_bridge = RobotBridgeNode()
         
-        executor = rclpy.executors.MultiThreadedExecutor(num_threads=3)
+        executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
         executor.add_node(node)
         executor.add_node(vla_node)
+        executor.add_node(skill_node)
         executor.add_node(robot_bridge)
 
         print("=" * 50)
@@ -292,8 +260,8 @@ def main(args=None):
     finally:
         try:
             node.destroy_node()
-            task_parser.destroy_node()
-            planner.destroy_node()
+            vla_node.destroy_node()
+            skill_node.destroy_node()
             robot_bridge.destroy_node()
         except:
             pass

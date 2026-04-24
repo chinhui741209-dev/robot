@@ -15,10 +15,11 @@ class RobotBridgeNode(Node):
     def __init__(self):
         super().__init__("robot_bridge")
 
-        self.step_sub = self.create_subscription(
-            Int32, "/planner/current_step", self.step_callback, 10
+        self.target_sub = self.create_subscription(
+            Float32MultiArray, "/control/target", self.target_callback, 10
         )
 
+        self.step_sub = self.create_subscription(Int32, "/planner/current_step", self.step_callback, 10)
         self.state_pub = self.create_publisher(String, "/robot/state", 10)
 
         self.motor_pub = self.create_publisher(
@@ -52,53 +53,44 @@ class RobotBridgeNode(Node):
         }
 
     def step_callback(self, msg):
-        step = msg.data
-        self.current_step = step
-        self.get_logger().info(f"Received step: {step}")
+        self.current_step = msg.data
+        self.get_logger().info(f"Monitor: Task at Step {self.current_step}")
 
-        motors = self.step_motor_mapping.get(step, [])
-
-        state_msg = String()
-        if step >= 10:
-            state_msg.data = "complete"
-            self.state = "complete"
-        else:
-            state_msg.data = "moving"
-            self.state = "moving"
-        self.state_pub.publish(state_msg)
-
-        # Simulate motor movement based on active joints in this step
-        for m in self.motor_positions.keys():
-            if m in motors:
-                # Move towards 45.0 degrees
-                self.motor_positions[m] = min(45.0, self.motor_positions[m] + 15.0)
-            elif self.current_step == 10:
-                # Reset to 0 when complete
-                self.motor_positions[m] = 0.0
-                
-        positions = [
-            float(self.motor_positions.get(m, 0.0))
-            for m in ["shoulder", "elbow", "wrist", "gripper"]
-        ]
+    def target_callback(self, msg):
+        # D3 Layer Logic: Control following the target from D7 Skill Layer
+        positions = list(msg.data)
+        if len(positions) >= 4:
+            self.motor_positions["shoulder"] = positions[0]
+            self.motor_positions["elbow"] = positions[1]
+            self.motor_positions["wrist"] = positions[2]
+            self.motor_positions["gripper"] = positions[3]
+            
+        # 1. Update Internal State and Publish for GUI
         motor_msg = Float32MultiArray()
-        motor_msg.data = positions
+        motor_msg.data = [float(x) for x in positions[:4]]
         self.motor_pub.publish(motor_msg)
 
-        self.get_logger().info(f"State: {state_msg.data}, Active Motors: {motors}")
-        
-        # --- Unitree Actuator SDK Parameter Simulation ---
-        # Gear ratio (r) for GO-M8010-6 is 6.33
-        # Calculations: kp_rotor = kp_output / (r^2), kd_rotor = kd_output / (r^2)
+        # 2. Update Robot State
+        state_msg = String()
+        state_msg.data = "executing_skill" if self.current_step < 10 else "complete"
+        self.state_pub.publish(state_msg)
+
+        # 3. Unitree SDK Simulation (RT Control Layer Logic)
         gear_ratio = 6.33
         kp_output_desired = 60.0
         kd_output_desired = 1.5
         
-        if motors:
-            kp_rotor = kp_output_desired / (gear_ratio ** 2)
-            kd_rotor = kd_output_desired / (gear_ratio ** 2)
+        kp_rotor = kp_output_desired / (gear_ratio ** 2)
+        kd_rotor = kd_output_desired / (gear_ratio ** 2)
+        
+        # Log RT stats (throttled)
+        if hasattr(self, "log_counter"): self.log_counter += 1
+        else: self.log_counter = 0
+        
+        if self.log_counter % 20 == 0:
             self.get_logger().info(
-                f"[Unitree SDK Sim] Output -> kp: {kp_output_desired:.1f}, kd: {kd_output_desired:.1f} | "
-                f"Rotor Command -> kp: {kp_rotor:.3f}, kd: {kd_rotor:.3f} (Ratio: {gear_ratio})"
+                f"[D3 Control] Target: {positions[0]:.1f}, {positions[1]:.1f} | "
+                f"SDK Kp_r: {kp_rotor:.3f}"
             )
 
 

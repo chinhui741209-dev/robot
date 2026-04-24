@@ -40,7 +40,7 @@ class VlaInferenceNode(Node):
         self.img_sub = self.create_subscription(Image, "/camera/image_raw", self.img_callback, 10)
         
         # VLA Outputs
-        self.action_pub = self.create_publisher(Float32MultiArray, "/policy/action_chunk", 10)
+        self.action_pub = self.create_publisher(Float32MultiArray, "/skill/command", 10)
         self.step_pub = self.create_publisher(Int32, "/planner/current_step", 10)
         
         self.latest_image = None
