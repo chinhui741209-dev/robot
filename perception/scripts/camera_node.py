@@ -42,12 +42,18 @@ class CameraNode(Node):
         self.frame_count = 0
 
         self.get_logger().info(f"Opening camera: {self.device}")
-        self.cap = cv2.VideoCapture(self.device)
+        # Try with V4L2 backend
+        self.cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
 
+        if not self.cap.isOpened():
+            self.cap = cv2.VideoCapture(self.device)
+            
         if not self.cap.isOpened():
             self.get_logger().error(f"Failed to open camera: {self.device}")
             return
 
+        # Force MJPG or YUYV to ensure correct decoding on Jetson USB cams
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
@@ -74,9 +80,17 @@ class CameraNode(Node):
 
         try:
             ret, frame = self.cap.read()
-            if not ret:
+            if not ret or frame is None:
                 self.get_logger().warn("Failed to read frame")
                 return
+                
+            # Ensure 3 channels and contiguous
+            if len(frame.shape) == 2:
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+            elif frame.shape[2] == 4:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                
+            frame = np.ascontiguousarray(frame)
 
             self.frame_count += 1
 
