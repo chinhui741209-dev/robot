@@ -67,6 +67,15 @@ class RobotBridgeNode(Node):
             self.state = "moving"
         self.state_pub.publish(state_msg)
 
+        # Simulate motor movement based on active joints in this step
+        for m in self.motor_positions.keys():
+            if m in motors:
+                # Move towards 45.0 degrees
+                self.motor_positions[m] = min(45.0, self.motor_positions[m] + 15.0)
+            elif self.current_step == 10:
+                # Reset to 0 when complete
+                self.motor_positions[m] = 0.0
+                
         positions = [
             self.motor_positions.get(m, 0.0)
             for m in ["shoulder", "elbow", "wrist", "gripper"]

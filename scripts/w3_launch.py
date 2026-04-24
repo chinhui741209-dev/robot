@@ -212,19 +212,6 @@ class W3Node(Node):
             # PERCEPTION (15 Hz = every 67 tick)
             # =====================
             if self.counter % 67 == 0:
-                img = Image()
-                h = Header()
-                h.stamp = t.to_msg()
-                h.frame_id = "camera"
-                img.header = h
-                img.height = 480
-                img.width = 640
-                img.encoding = "rgb8"
-                img.step = 640 * 3
-                img.data = np.random.randint(
-                    0, 255, (480, 640, 3), dtype=np.uint8
-                ).tobytes()
-                self.camera_pub.publish(img)
 
                 # Lidar (simulated point cloud)
                 lidar = Float32MultiArray()
