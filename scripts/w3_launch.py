@@ -264,18 +264,15 @@ def main(args=None):
         import os
         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
-        from task_parser.scripts.task_parser_node import TaskParserNode
-        from planner.scripts.planner_node import PlannerNode
+        from policy.vla_inference_node import VlaInferenceNode
         from robot_bridge.scripts.robot_bridge_node import RobotBridgeNode
         
-        task_parser = TaskParserNode()
-        planner = PlannerNode()
+        vla_node = VlaInferenceNode()
         robot_bridge = RobotBridgeNode()
         
-        executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
+        executor = rclpy.executors.MultiThreadedExecutor(num_threads=3)
         executor.add_node(node)
-        executor.add_node(task_parser)
-        executor.add_node(planner)
+        executor.add_node(vla_node)
         executor.add_node(robot_bridge)
 
         print("=" * 50)
