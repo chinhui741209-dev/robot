@@ -84,7 +84,22 @@ class RobotBridgeNode(Node):
         motor_msg.data = positions
         self.motor_pub.publish(motor_msg)
 
-        self.get_logger().info(f"State: {state_msg.data}, Motors: {motors}")
+        self.get_logger().info(f"State: {state_msg.data}, Active Motors: {motors}")
+        
+        # --- Unitree Actuator SDK Parameter Simulation ---
+        # Gear ratio (r) for GO-M8010-6 is 6.33
+        # Calculations: kp_rotor = kp_output / (r^2), kd_rotor = kd_output / (r^2)
+        gear_ratio = 6.33
+        kp_output_desired = 60.0
+        kd_output_desired = 1.5
+        
+        if motors:
+            kp_rotor = kp_output_desired / (gear_ratio ** 2)
+            kd_rotor = kd_output_desired / (gear_ratio ** 2)
+            self.get_logger().info(
+                f"[Unitree SDK Sim] Output -> kp: {kp_output_desired:.1f}, kd: {kd_output_desired:.1f} | "
+                f"Rotor Command -> kp: {kp_rotor:.3f}, kd: {kd_rotor:.3f} (Ratio: {gear_ratio})"
+            )
 
 
 def main(args=None):
