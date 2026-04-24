@@ -252,10 +252,30 @@ class DemoGUI:
 
     def image_callback(self, msg):
         try:
-            frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-                msg.height, msg.width, 3
-            )
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            data = np.frombuffer(msg.data, dtype=np.uint8)
+            expected_size = msg.height * msg.width * 3
+            
+            if len(data) == expected_size:
+                frame = data.reshape(msg.height, msg.width, 3)
+                if msg.encoding in ["bgr8", "bgr"]:
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                else:
+                    rgb = frame
+            else:
+                print(f"[GUI] Image size mismatch! Expected {expected_size}, got {len(data)}. Encoding: {msg.encoding}, Step: {msg.step}")
+                bytes_per_pixel = msg.step // msg.width if msg.width > 0 else 3
+                if len(data) == msg.height * msg.step:
+                    frame = data.reshape(msg.height, msg.width, bytes_per_pixel)
+                    if bytes_per_pixel == 1:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+                    elif bytes_per_pixel == 3:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    elif bytes_per_pixel == 4:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+                    else:
+                        rgb = np.zeros((msg.height, msg.width, 3), dtype=np.uint8)
+                else:
+                    return
 
             h, w = rgb.shape[:2]
             max_w, max_h = 480, 270
@@ -271,7 +291,7 @@ class DemoGUI:
 
             self.root.after(0, _update)
         except Exception as e:
-            pass
+            print(f"[GUI] image_callback error: {e}")
 
     def parsed_callback(self, msg):
         def _update():
@@ -299,11 +319,10 @@ class DemoGUI:
             if len(data) >= 4:
                 for i, m in enumerate(self.motors):
                     self.motor_values[m] = data[i]
-        except:
-            pass
+        except Exception as e:
+            print(f"[GUI] motor_callback error: {e}")
 
         def _update():
-            text = "\n".join([f"{m}: {self.motor_values[m]:.2f}" for m in self.motors])
             for m, label in self.motor_labels.items():
                 label.configure(text=f"{m}: {self.motor_values[m]:.2f}")
 

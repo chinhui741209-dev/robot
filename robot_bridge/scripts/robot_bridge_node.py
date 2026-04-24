@@ -77,7 +77,7 @@ class RobotBridgeNode(Node):
                 self.motor_positions[m] = 0.0
                 
         positions = [
-            self.motor_positions.get(m, 0.0)
+            float(self.motor_positions.get(m, 0.0))
             for m in ["shoulder", "elbow", "wrist", "gripper"]
         ]
         motor_msg = Float32MultiArray()
