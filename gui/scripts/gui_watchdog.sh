@@ -8,6 +8,8 @@ while true; do
     
     # Load ROS 2 environment
     source /opt/ros/humble/setup.bash
+    export ROS_DOMAIN_ID=42
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     export PYTHONPATH=$PYTHONPATH:/home/nvidia/poc/poc-orin
     
     /usr/bin/python3 /home/nvidia/poc/poc-orin/gui/scripts/demo_gui_tk.py

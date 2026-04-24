@@ -11,6 +11,8 @@ echo "Launch: Demo Application"
 echo "=========================================="
 
 source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=42
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export POC_ROOT="$POC_ROOT"
 export PYTHONPATH="$PYTHONPATH:$POC_ROOT"
 
