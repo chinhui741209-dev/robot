@@ -231,15 +231,18 @@ def main(args=None):
         
         from policy.vla_inference_node import VlaInferenceNode
         from skill.scripts.skill_node import SkillNode
+        from world_model.scripts.world_model_node import WorldModelNode
         from robot_bridge.scripts.robot_bridge_node import RobotBridgeNode
         
         vla_node = VlaInferenceNode()
+        world_model = WorldModelNode()
         skill_node = SkillNode()
         robot_bridge = RobotBridgeNode()
         
-        executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
+        executor = rclpy.executors.MultiThreadedExecutor(num_threads=5)
         executor.add_node(node)
         executor.add_node(vla_node)
+        executor.add_node(world_model)
         executor.add_node(skill_node)
         executor.add_node(robot_bridge)
 
@@ -261,6 +264,7 @@ def main(args=None):
         try:
             node.destroy_node()
             vla_node.destroy_node()
+            world_model.destroy_node()
             skill_node.destroy_node()
             robot_bridge.destroy_node()
         except:
