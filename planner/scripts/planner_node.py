@@ -64,6 +64,14 @@ class PlannerNode(Node):
         plan_msg = Float32MultiArray()
         plan_msg.data = [float(i) for i in range(len(self.task_steps))]
         self.plan_pub.publish(plan_msg)
+        
+        # Immediately publish step 0
+        step_msg = Int32()
+        step_msg.data = self.current_step
+        self.step_pub.publish(step_msg)
+        self.get_logger().info(
+            f"Step {self.current_step}: {self.task_steps[self.current_step]}"
+        )
 
     def step_timer_callback(self):
         if not self.running:
@@ -74,6 +82,10 @@ class PlannerNode(Node):
         if self.current_step >= len(self.task_steps):
             self.current_step = len(self.task_steps) - 1
             self.running = False
+            # Publish final Complete state
+            step_msg = Int32()
+            step_msg.data = self.current_step
+            self.step_pub.publish(step_msg)
             return
 
         step_msg = Int32()
