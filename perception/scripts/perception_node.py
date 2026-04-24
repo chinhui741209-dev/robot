@@ -42,7 +42,7 @@ class PerceptionNode(Node):
         )
 
         self.detection_pub = self.create_publisher(
-            Detection2DArray, "/perception/detections", 10
+            Detection2DArray, "/perception/objects", 10
         )
 
         self.scene_pub = self.create_publisher(String, "/perception/scene_state", 10)

@@ -22,7 +22,7 @@ class W3Node(Node):
         # =====================
         # BUDDY Subsystem (1000 Hz)
         # =====================
-        self.buddy_imu_pub = self.create_publisher(Imu, "/buddy/imu", 10)
+        self.buddy_imu_pub = self.create_publisher(Imu, "/imu/data", 10)
         self.buddy_motor_pub = self.create_publisher(Twist, "/buddy/motor_state", 10)
         self.buddy_health_pub = self.create_publisher(String, "/buddy/hal/health", 10)
 
@@ -103,7 +103,7 @@ class W3Node(Node):
             if not inject_error:
                 imu = Imu()
                 imu.header.stamp = t.to_msg()
-                imu.header.frame_id = "buddy_imu"
+                imu.header.frame_id = "imu_link"
 
                 imu.orientation.x = math.sin(self.counter * 0.001)
                 imu.orientation.y = math.cos(self.counter * 0.001)

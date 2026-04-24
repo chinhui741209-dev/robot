@@ -20,10 +20,10 @@ class RobotBridgeNode(Node):
         )
 
         self.step_sub = self.create_subscription(Int32, "/planner/current_step", self.step_callback, 10)
-        self.state_pub = self.create_publisher(String, "/robot/state", 10)
+        self.state_pub = self.create_publisher(String, "/control/state", 10)
 
         self.motor_pub = self.create_publisher(
-            Float32MultiArray, "/robot/motor_status", 10
+            Float32MultiArray, "/joint_states", 10
         )
 
         self.get_logger().info("Robot Bridge Node started")

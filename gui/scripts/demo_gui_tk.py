@@ -235,7 +235,7 @@ class DemoGUI:
             Int32, "/planner/current_step", self.step_callback, 10
         )
         self.motor_sub = self.node.create_subscription(
-            Float32MultiArray, "/robot/motor_status", self.motor_callback, 10
+            Float32MultiArray, "/joint_states", self.motor_callback, 10
         )
 
         while self.running and rclpy.ok():
