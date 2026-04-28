@@ -45,7 +45,6 @@ jobs:
           # 透過 sudo 重啟系統服務
           sudo systemctl restart robot-core.service
 
-      - name: 
       - name: Build C++ ROS 2 packages
         run: |
           source /opt/ros/humble/setup.bash
