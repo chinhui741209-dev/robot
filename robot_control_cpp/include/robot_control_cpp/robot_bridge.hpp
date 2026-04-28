@@ -22,7 +22,7 @@ private:
 
     // ROS 2 Interfaces
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr target_sub_;
-    rclcpp::Publisher<sensor_msgs::msg::Joint_state>::SharedPtr joint_state_pub_; // Corrected typo in type naming if needed, checking standard
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
 

@@ -37,8 +37,8 @@ void RobotBridge::target_callback(const std_msgs::msg::Float32MultiArray::Shared
         motor_positions_["gripper"] = msg->data[3];
 
         // Unitree SDK Parameter Calculation Simulation
-        double kp_rotor = kp_output_desired / (gear_ratio * gear_ratio);
-        double kd_rotor = kd_output_desired / (gear_ratio * gear_ratio);
+        double kp_rotor [[maybe_unused]] = kp_output_desired / (gear_ratio * gear_ratio);
+        double kd_rotor [[maybe_unused]] = kd_output_desired / (gear_ratio * gear_ratio);
         
         RCLCPP_DEBUG(this->get_logger(), "[Unitree Sim] Target received. Kp_r: %.3f", kp_rotor);
     }
