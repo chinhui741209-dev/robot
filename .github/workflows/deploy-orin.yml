@@ -18,9 +18,8 @@ jobs:
 
       - name: Ensure deployment directory exists
         run: |
-          # 明確使用 nvidia 帳號而不是 $USER 以避免環境變數未定義
-          sudo mkdir -p /home/nvidia/poc/poc-orin/
-          sudo chown nvidia:nvidia /home/nvidia/poc/poc-orin/
+          # 嘗試在不使用 sudo 的情況下建立目錄（假設 runner 帳號有權限存取自己的家目錄）
+          mkdir -p /home/nvidia/poc/poc-orin/
 
       - name: Sync files to Orin deployment directory
         run: |
