@@ -18,8 +18,9 @@ jobs:
 
       - name: Ensure deployment directory exists
         run: |
+          # 明確使用 nvidia 帳號而不是 $USER 以避免環境變數未定義
           sudo mkdir -p /home/nvidia/poc/poc-orin/
-          sudo chown $USER:$USER /home/nvidia/poc/poc-orin/
+          sudo chown nvidia:nvidia /home/nvidia/poc/poc-orin/
 
       - name: Sync files to Orin deployment directory
         run: |
@@ -61,5 +62,10 @@ jobs:
 
       - name: Verify service status
         run: |
-          # 檢查服務狀態確保啟動成功
-          systemctl is-active robot-core.service || (echo "Service failed to start" && exit 1)
+          # 檢查服務狀態，若失敗則輸出近期日誌並退出
+          if ! systemctl is-active --quiet robot-core.service; then
+            echo "Service failed to start. Showing last 50 lines of logs:"
+            sudo journalctl -u robot-core.service -n 50 --no-pager
+            exit 1
+          fi
+          echo "Service robot-core.service is running."
