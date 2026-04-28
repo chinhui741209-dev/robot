@@ -11,23 +11,20 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
-# Include directories
-include_directories(include)
-
-# Create the library/node executable
+# Create the executable
 add_executable(robot_bridge_cpp
   src/robot_bridge.cpp
   src/main.cpp
 )
 
-# Target dependencies
-target_link_libraries(robot_bridge_cpp
-  ${rclcpp_LIBRARIES}
-  ${std_msgs_LIBRARIES}
-  ${sensor_msgs_LIBRARIES}
+# Use ament_target_dependencies to handle include paths and libraries transitively
+ament_target_dependencies(robot_bridge_cpp
+  rclcpp
+  std_msgs
+  sensor_msgs
 )
 
-# Define include directories for the target
+# Target-specific include directories (for local headers)
 target_include_directories(robot_bridge_cpp PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
