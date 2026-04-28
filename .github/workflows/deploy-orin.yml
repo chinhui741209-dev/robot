@@ -5,6 +5,9 @@ on:
     branches:
       - main # 當推送至 main 分支時觸發
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 解決 Node.js 20 棄用警告
+
 jobs:
   deploy:
     runs-on: self-hosted # 指定由 Orin 上的 self-hosted runner 執行
@@ -12,6 +15,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Ensure deployment directory exists
+        run: |
+          sudo mkdir -p /home/nvidia/poc/poc-orin/
+          sudo chown $USER:$USER /home/nvidia/poc/poc-orin/
 
       - name: Sync files to Orin deployment directory
         run: |
@@ -24,7 +32,6 @@ jobs:
       - name: Write version file
         run: |
           echo "Build: ${{ github.sha }}" | cut -c 1-14 > /home/nvidia/poc/poc-orin/VERSION.txt
-
 
       - name: Trigger GUI Auto-Restart (Watchdog)
         run: |
@@ -47,6 +54,7 @@ jobs:
 
       - name: Build C++ ROS 2 packages
         run: |
+          # 確保在目標目錄執行編譯
           source /opt/ros/humble/setup.bash
           cd /home/nvidia/poc/poc-orin
           colcon build --packages-select robot_control_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release
