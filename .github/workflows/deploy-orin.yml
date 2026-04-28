@@ -45,6 +45,13 @@ jobs:
           # 透過 sudo 重啟系統服務
           sudo systemctl restart robot-core.service
 
+      - name: 
+      - name: Build C++ ROS 2 packages
+        run: |
+          source /opt/ros/humble/setup.bash
+          cd /home/nvidia/poc/poc-orin
+          colcon build --packages-select robot_control_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release
+
       - name: Verify service status
         run: |
           # 檢查服務狀態確保啟動成功
