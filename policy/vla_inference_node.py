@@ -107,8 +107,7 @@ class VlaInferenceNode(Node):
             return
 
         # 2. OpenVLA Prompt Engineering
-        # OpenVLA expects: "In: What action should the robot take to [instruction]?
-Out:"
+        # OpenVLA expects: "In: What action should the robot take to [instruction]?\nOut:"
         prompt = f"In: What action should the robot take to {command}?\nOut:"
         
         # 3. Inference
