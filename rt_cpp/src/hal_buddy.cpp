@@ -64,7 +64,13 @@ int main() {
         shm->imu.linear_acceleration[1] = std::cos(counter * 0.001) * 9.8;
         shm->imu.linear_acceleration[2] = 9.8;
 
-        shm->motor.timestamp = ts;
+        // Mock 32-DOF Joint States
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            shm->joint_state.position[i] = std::sin(counter * 0.001 + i * 0.1);
+            shm->joint_state.velocity[i] = std::cos(counter * 0.001 + i * 0.1);
+            shm->joint_state.effort[i] = 0.0;
+        }
+
         shm->imu_counter = counter;
 
         if (shm->stop) g_stop = true;

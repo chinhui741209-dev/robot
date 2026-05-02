@@ -22,6 +22,14 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray
 import sensor_msgs.msg
 import lcm
+import os
+import onnxruntime as ort
+
+try:
+    from perception.trt_inference import TRTInference
+    HAS_TRT = True
+except ImportError:
+    HAS_TRT = False
 
 sys.path.insert(0, __file__.rsplit("/policy/", 1)[0])
 from lcm_types.robot_lcm_types import BuddyImu, BUDDY_IMU
@@ -33,8 +41,33 @@ class PolicyNode(Node):
 
         self.declare_parameter("rate", 50)
         self.declare_parameter("sim",  True)
+        self.declare_parameter("use_trt", True)
+        self.declare_parameter("model_path", "/home/nvidia/poc/poc-orin/models/active/simple_policy.onnx")
+        
         self.rate = self.get_parameter("rate").value
         self.sim  = self.get_parameter("sim").value
+        self.use_trt = self.get_parameter("use_trt").value
+        model_path = self.get_parameter("model_path").value
+
+        # Initialize Inference Backend
+        self.trt_engine = None
+        self.session = None
+
+        if self.use_trt and HAS_TRT:
+            engine_path = model_path.replace(".onnx", ".engine")
+            if os.path.exists(engine_path):
+                try:
+                    self.trt_engine = TRTInference(engine_path)
+                    self.get_logger().info(f"Using TensorRT for Policy: {engine_path}")
+                except Exception as e:
+                    self.get_logger().warn(f"Failed to load Policy TRT engine: {e}")
+
+        if self.trt_engine is None and not self.sim:
+            try:
+                self.session = ort.InferenceSession(model_path)
+                self.get_logger().info("Using ONNX Runtime for Policy")
+            except Exception as e:
+                self.get_logger().error(f"Failed to load Policy ONNX model: {e}")
 
         self.action_pub       = self.create_publisher(Twist,             "/policy/action",       10)
         self.action_chunk_pub = self.create_publisher(Float32MultiArray, "/policy/action_chunk", 10)

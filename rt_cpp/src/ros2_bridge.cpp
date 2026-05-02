@@ -2,6 +2,7 @@
 #include <memory>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "rt_cpp/shared_memory.hpp"
@@ -13,8 +14,18 @@ class RobotRTBridge : public rclcpp::Node {
 public:
     RobotRTBridge() : Node("robot_rt_bridge") {
         imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("/buddy/imu", 10);
+        joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
         pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/state/pose", 10);
         health_pub_ = this->create_publisher<std_msgs::msg::String>("/buddy/hal/health", 10);
+
+        // Initialize joint names
+        joint_msg_.name.resize(NUM_JOINTS);
+        joint_msg_.position.resize(NUM_JOINTS);
+        joint_msg_.velocity.resize(NUM_JOINTS);
+        joint_msg_.effort.resize(NUM_JOINTS);
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            joint_msg_.name[i] = "joint_" + std::to_string(i + 1);
+        }
 
         shm_ = init_shared_memory(false);
         if (!shm_) {
@@ -49,6 +60,15 @@ private:
         imu_msg.linear_acceleration.z = shm_->imu.linear_acceleration[2];
         imu_pub_->publish(imu_msg);
 
+        // Publish Joint States
+        joint_msg_.header.stamp = imu_msg.header.stamp;
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            joint_msg_.position[i] = shm_->joint_state.position[i];
+            joint_msg_.velocity[i] = shm_->joint_state.velocity[i];
+            joint_msg_.effort[i] = shm_->joint_state.effort[i];
+        }
+        joint_pub_->publish(joint_msg_);
+
         // Publish Pose
         auto pose_msg = geometry_msgs::msg::PoseStamped();
         pose_msg.header.stamp = this->now();
@@ -72,9 +92,11 @@ private:
 
     RobotSharedData* shm_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr health_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
+    sensor_msgs::msg::JointState joint_msg_;
 };
 
 int main(int argc, char* argv[]) {

@@ -17,6 +17,17 @@ from std_msgs.msg import Header, Float32MultiArray, String
 import cv2
 import numpy as np
 import onnxruntime as ort
+import os
+import sys
+
+# Add project root to path for package imports
+sys.path.insert(0, __file__.rsplit("/perception/", 1)[0])
+
+try:
+    from perception.trt_inference import TRTInference
+    HAS_TRT = True
+except ImportError:
+    HAS_TRT = False
 
 
 class PerceptionNode(Node):
@@ -26,6 +37,7 @@ class PerceptionNode(Node):
         self.declare_parameter(
             "model_path", "/home/nvidia/poc/poc-orin/models/active/detection_v2.onnx"
         )
+        self.declare_parameter("use_trt", True)
         self.declare_parameter("confidence_threshold", 0.5)
         self.declare_parameter("input_size", 224)
         self.declare_parameter("publish_rate", 10.0)
@@ -33,6 +45,7 @@ class PerceptionNode(Node):
         self.class_names = ["pen", "box"]
 
         model_path = self.get_parameter("model_path").value
+        self.use_trt = self.get_parameter("use_trt").value
         self.confidence_threshold = self.get_parameter("confidence_threshold").value
         self.input_size = self.get_parameter("input_size").value
         self.publish_rate = self.get_parameter("publish_rate").value
@@ -53,14 +66,28 @@ class PerceptionNode(Node):
 
         self.get_logger().info(f"Loading model: {model_path}")
 
-        try:
-            self.session = ort.InferenceSession(model_path)
-            self.input_name = self.session.get_inputs()[0].name
-            self.output_name = self.session.get_outputs()[0].name
-            self.get_logger().info("Model loaded successfully")
-        except Exception as e:
-            self.get_logger().error(f"Failed to load model: {e}")
-            self.session = None
+        # Initialize Inference Backend
+        self.trt_engine = None
+        self.session = None
+
+        if self.use_trt and HAS_TRT:
+            engine_path = model_path.replace(".onnx", ".engine")
+            if os.path.exists(engine_path):
+                try:
+                    self.trt_engine = TRTInference(engine_path)
+                    self.get_logger().info(f"Using TensorRT backend: {engine_path}")
+                except Exception as e:
+                    self.get_logger().warn(f"Failed to load TRT engine, falling back: {e}")
+
+        if self.trt_engine is None:
+            try:
+                self.session = ort.InferenceSession(model_path)
+                self.input_name = self.session.get_inputs()[0].name
+                self.output_name = self.session.get_outputs()[0].name
+                self.get_logger().info("Using ONNX Runtime backend")
+            except Exception as e:
+                self.get_logger().error(f"Failed to load model: {e}")
+                self.session = None
 
         self.frame_count = 0
         self.last_fps_time = self.get_clock().now()
@@ -137,9 +164,12 @@ class PerceptionNode(Node):
 
             input_data = self.preprocess(image)
 
-            outputs = self.session.run(
-                [self.output_name], {self.input_name: input_data}
-            )
+            if self.trt_engine:
+                outputs = self.trt_engine.run(input_data)
+            else:
+                outputs = self.session.run(
+                    [self.output_name], {self.input_name: input_data}
+                )
 
             detections = self.postprocess(outputs, image.shape)
 

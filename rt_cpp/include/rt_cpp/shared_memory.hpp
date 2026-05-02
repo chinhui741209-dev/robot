@@ -12,6 +12,7 @@
 namespace rt_cpp {
 
 #define SHM_NAME "/robot_shared_data"
+#define NUM_JOINTS 32
 #define SHM_SIZE sizeof(RobotSharedData)
 
 struct BuddyImu {
@@ -21,10 +22,18 @@ struct BuddyImu {
     double linear_acceleration[3]; // x, y, z
 };
 
-struct MotorState {
-    int64_t timestamp;
-    double linear[3];  // x, y, z
-    double angular[3]; // x, y, z
+struct JointState {
+    double position[NUM_JOINTS];
+    double velocity[NUM_JOINTS];
+    double effort[NUM_JOINTS];
+};
+
+struct JointCommand {
+    double q_des[NUM_JOINTS];
+    double dq_des[NUM_JOINTS];
+    double kp[NUM_JOINTS];
+    double kd[NUM_JOINTS];
+    double tau_ff[NUM_JOINTS];
 };
 
 struct StatePose {
@@ -36,11 +45,12 @@ struct StatePose {
 struct RobotSharedData {
     pthread_mutex_t mutex;
     BuddyImu imu;
-    MotorState motor;
+    JointState joint_state;        // Updated: 32-DOF
+    JointCommand joint_cmd;        // Updated: 32-DOF
     StatePose pose;
     bool stop;
-    bool estop_active;             // New: Hardware-level emergency stop flag
-    uint64_t watchdog_counter;     // New: For heartbeat monitoring
+    bool estop_active;             // Hardware-level emergency stop flag
+    uint64_t watchdog_counter;     // For heartbeat monitoring
     uint64_t imu_counter;
     uint64_t pose_counter;
 };
