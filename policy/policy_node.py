@@ -20,6 +20,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray
+import sensor_msgs.msg
 import lcm
 
 sys.path.insert(0, __file__.rsplit("/policy/", 1)[0])
@@ -39,6 +40,9 @@ class PolicyNode(Node):
         self.action_chunk_pub = self.create_publisher(Float32MultiArray, "/policy/action_chunk", 10)
         self.latency_pub      = self.create_publisher(Float32MultiArray, "/policy/latency",      10)
 
+        # ── Data Input: Support both LCM (direct) and ROS 2 (bridged) ─────────
+        self.imu_sub = self.create_subscription(sensor_msgs.msg.Imu, "/buddy/imu", self._ros2_imu_handler, 10)
+        
         self._lc             = lcm.LCM()
         self._last_imu       = None
         self._imu_lock       = threading.Lock()
@@ -60,6 +64,19 @@ class PolicyNode(Node):
     def _imu_handler(self, channel, data):
         with self._imu_lock:
             self._last_imu = BuddyImu.decode(data)
+            self._inference_count += 1
+
+    def _ros2_imu_handler(self, msg):
+        # Convert ROS 2 IMU message to the internal BuddyImu format
+        # This allows the rest of the logic to remain unchanged
+        new_imu = BuddyImu()
+        new_imu.timestamp = int(msg.header.stamp.sec * 1e6 + msg.header.stamp.nanosec / 1e3)
+        new_imu.orientation = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
+        new_imu.angular_velocity = [msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z]
+        new_imu.linear_acceleration = [msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z]
+        
+        with self._imu_lock:
+            self._last_imu = new_imu
             self._inference_count += 1
 
     # ── ROS 2 timer ───────────────────────────────────────────────────────────
