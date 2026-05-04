@@ -35,7 +35,7 @@
 *   **驗證內容**：
     *   **Detection I/O**：輸入 (1,3,224,224) 確保與 ONNX Runtime 相容。
     *   **Latency Budget**：相機 15Hz 處理時間必須低於 66.7ms (實測邏輯驗證 OK)。
-    *   **Policy Output**：輸出 6D Twist 向量維度正確。
+    *   **Policy Output**：輸出 32D 關節指令向量維度正確。
 
 ---
 

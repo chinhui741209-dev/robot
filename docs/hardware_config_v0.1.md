@@ -96,7 +96,7 @@
 | /omni/hal/health | std_msgs/String | 1000 Hz | hal_omni | - |
 | /state/pose | geometry_msgs/Pose | 500 Hz | state_estimator | - |
 | /tf | geometry_msgs/Twist | 500 Hz | state_estimator | - |
-| /policy/action | geometry_msgs/Twist | 50 Hz | policy_node | - |
+| /policy/joint_commands | std_msgs/Float32MultiArray | 50 Hz | policy_node | - |
 | /policy/action_chunk | std_msgs/Float32MultiArray | 50 Hz | policy_node | - |
 | /policy/latency | std_msgs/Float32MultiArray | 1 Hz | policy_node | - |
 | /perception/camera | sensor_msgs/Image | 15 Hz | perception | - |

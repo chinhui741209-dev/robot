@@ -29,36 +29,19 @@ class TaskParserNode(Node):
                 "intent": "pick_and_place",
                 "source": "pen",
                 "target": "box",
-            },
-            "把筆放到箱子中": {
-                "intent": "pick_and_place",
-                "source": "pen",
-                "target": "box",
-            },
-            "pick pen to box": {
-                "intent": "pick_and_place",
-                "source": "pen",
-                "target": "box",
+                "steps": ["locate_pen", "grasp_pen", "move_to_box", "release_pen"]
             },
             "把蘋果放到盒子中": {
                 "intent": "pick_and_place",
                 "source": "apple",
                 "target": "box",
+                "steps": ["locate_apple", "grasp_apple", "move_to_box", "release_apple"]
             },
             "把橘子放到盒子中": {
                 "intent": "pick_and_place",
                 "source": "orange",
                 "target": "box",
-            },
-            "pick apple to box": {
-                "intent": "pick_and_place",
-                "source": "apple",
-                "target": "box",
-            },
-            "pick orange to box": {
-                "intent": "pick_and_place",
-                "source": "orange",
-                "target": "box",
+                "steps": ["locate_orange", "grasp_orange", "move_to_box", "release_orange"]
             },
         }
 

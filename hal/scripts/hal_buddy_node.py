@@ -35,6 +35,10 @@ def _sighandler(sig, _frame):
 
 
 def main():
+    print("==========================================")
+    print("WARNING: hal_buddy_node.py (Python/LCM) is DEPRECATED.")
+    print("Use C++ SHM implementation in rt_cpp/ instead.")
+    print("==========================================")
     signal.signal(signal.SIGTERM, _sighandler)
     signal.signal(signal.SIGINT,  _sighandler)
 

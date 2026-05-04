@@ -8,8 +8,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POC_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "=========================================="
-echo "Bring-up: Control Layer"
+echo "WARNING: This Python/LCM control path is LEGACY."
+echo "Please use ./bringup_control_cpp.sh for the primary RT path."
 echo "=========================================="
+echo "Bring-up: Control Layer (Legacy Python/LCM Implementation)"
 
 source /opt/ros/humble/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

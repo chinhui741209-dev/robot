@@ -18,6 +18,8 @@ import time
 
 # ─── Channel name constants ────────────────────────────────────────────────────
 BUDDY_IMU         = "BUDDY_IMU"
+BUDDY_JOINT_STATE = "BUDDY_JOINT_STATE"
+BUDDY_JOINT_CMD   = "BUDDY_JOINT_CMD"
 BUDDY_MOTOR_STATE = "BUDDY_MOTOR_STATE"
 BUDDY_HAL_HEALTH  = "BUDDY_HAL_HEALTH"
 STATE_POSE        = "STATE_POSE"
@@ -59,6 +61,68 @@ class BuddyImu:
         msg.orientation         = list(f[1:5])
         msg.angular_velocity    = list(f[5:8])
         msg.linear_acceleration = list(f[8:11])
+        return msg
+
+
+# ─── JointState ───────────────────────────────────────────────────────────────
+# Fields: timestamp(i64) | position[32](f64) | velocity[32](f64) | effort[32](f64)
+# Wire size: 8 + 96*8 = 776 bytes
+class JointState:
+    _FMT  = ">q96d"
+    _SIZE = struct.calcsize(_FMT)
+
+    __slots__ = ("timestamp", "position", "velocity", "effort")
+
+    def __init__(self):
+        self.timestamp = _now_us()
+        self.position  = [0.0] * 32
+        self.velocity  = [0.0] * 32
+        self.effort    = [0.0] * 32
+
+    def encode(self) -> bytes:
+        return struct.pack(self._FMT, self.timestamp, *self.position, *self.velocity, *self.effort)
+
+    @classmethod
+    def decode(cls, data: bytes) -> "JointState":
+        f = struct.unpack(cls._FMT, data[: cls._SIZE])
+        msg = cls.__new__(cls)
+        msg.timestamp = f[0]
+        msg.position  = list(f[1:33])
+        msg.velocity  = list(f[33:65])
+        msg.effort    = list(f[65:97])
+        return msg
+
+
+# ─── JointCommand ─────────────────────────────────────────────────────────────
+# Fields: timestamp(i64) | q_des[32](f64) | dq_des[32](f64) | kp[32](f64) | kd[32](f64) | tau_ff[32](f64)
+# Wire size: 8 + 160*8 = 1288 bytes
+class JointCommand:
+    _FMT  = ">q160d"
+    _SIZE = struct.calcsize(_FMT)
+
+    __slots__ = ("timestamp", "q_des", "dq_des", "kp", "kd", "tau_ff")
+
+    def __init__(self):
+        self.timestamp = _now_us()
+        self.q_des     = [0.0] * 32
+        self.dq_des    = [0.0] * 32
+        self.kp        = [0.0] * 32
+        self.kd        = [0.0] * 32
+        self.tau_ff    = [0.0] * 32
+
+    def encode(self) -> bytes:
+        return struct.pack(self._FMT, self.timestamp, *self.q_des, *self.dq_des, *self.kp, *self.kd, *self.tau_ff)
+
+    @classmethod
+    def decode(cls, data: bytes) -> "JointCommand":
+        f = struct.unpack(cls._FMT, data[: cls._SIZE])
+        msg = cls.__new__(cls)
+        msg.timestamp = f[0]
+        msg.q_des     = list(f[1:33])
+        msg.dq_des    = list(f[33:65])
+        msg.kp        = list(f[65:97])
+        msg.kd        = list(f[97:129])
+        msg.tau_ff    = list(f[129:161])
         return msg
 
 

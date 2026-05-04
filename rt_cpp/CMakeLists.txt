@@ -15,6 +15,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(Threads REQUIRED)
+find_package(std_srvs REQUIRED)
 
 include_directories(include)
 
@@ -38,6 +39,7 @@ ament_target_dependencies(ros2_bridge
   sensor_msgs
   geometry_msgs
   std_msgs
+  std_srvs
   nav_msgs
 )
 target_link_libraries(ros2_bridge PRIVATE Threads::Threads)
@@ -52,11 +54,25 @@ if(NOT APPLE)
     target_link_libraries(test_shm_logic PRIVATE rt)
 endif()
 
+add_executable(test_safety_logic src/test_safety_logic.cpp)
+target_link_libraries(test_safety_logic PRIVATE Threads::Threads)
+if(NOT APPLE)
+    target_link_libraries(test_safety_logic PRIVATE rt)
+endif()
+
+add_executable(benchmark_rt src/benchmark_rt.cpp)
+target_link_libraries(benchmark_rt PRIVATE Threads::Threads)
+if(NOT APPLE)
+    target_link_libraries(benchmark_rt PRIVATE rt)
+endif()
+
 install(TARGETS
   hal_buddy
   state_estimator
   ros2_bridge
   test_shm_logic
+  test_safety_logic
+  benchmark_rt
   DESTINATION lib/${PROJECT_NAME}
 )
 

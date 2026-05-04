@@ -24,29 +24,18 @@ class PlannerNode(Node):
         )
 
         self.step_pub = self.create_publisher(Int32, "/planner/current_step", 10)
+        self.state_pub = self.create_publisher(String, "/planner/state", 10)
 
         self.get_logger().info("Planner Node started")
 
-        self.task_steps = [
-            "Locate source",
-            "Locate target",
-            "Move to pre-grasp",
-            "Move to grasp",
-            "Close gripper",
-            "Lift object",
-            "Move to target",
-            "Position over target",
-            "Open gripper",
-            "Retreat",
-            "Complete",
-        ]
-
+        self.default_steps = ["Idle"]
+        self.current_steps = self.default_steps
         self.current_command = None
-        self.current_step = -1
-        self.running = False
-        self.step_duration = 1.0
+        self.current_step_idx = -1
+        self.state = "IDLE" # IDLE, RUNNING, COMPLETED
+        self.step_duration = 2.0
 
-        self.timer = self.create_timer(self.step_duration, self.step_timer_callback)
+        self.timer = self.create_timer(1.0, self.state_machine_callback)
 
     def command_callback(self, msg):
         try:
@@ -56,83 +45,46 @@ class PlannerNode(Node):
             return
 
         self.current_command = command
-        self.current_step = 0
-        self.running = True
+        self.current_steps = command.get("steps", ["Default Action"])
+        self.current_step_idx = 0
+        self.state = "RUNNING"
 
-        self.get_logger().info(f"Starting task: {command}")
+        self.get_logger().info(f"Starting task: {command['intent']} with {len(self.current_steps)} steps")
 
         plan_msg = Float32MultiArray()
-        plan_msg.data = [float(i) for i in range(len(self.task_steps))]
+        plan_msg.data = [float(i) for i in range(len(self.current_steps))]
         self.plan_pub.publish(plan_msg)
         
-        # Immediately publish step 0
-        step_msg = Int32()
-        step_msg.data = self.current_step
-        self.step_pub.publish(step_msg)
-        self.get_logger().info(
-            f"Step {self.current_step}: {self.task_steps[self.current_step]}"
-        )
+    def state_machine_callback(self):
+        # Publish current state
+        state_msg = String()
+        state_msg.data = self.state
+        self.state_pub.publish(state_msg)
 
-    def step_timer_callback(self):
-        if not self.running:
+        if self.state != "RUNNING":
             return
 
-        self.current_step += 1
-
-        if self.current_step >= len(self.task_steps):
-            self.current_step = len(self.task_steps) - 1
-            self.running = False
-            # Publish final Complete state
+        if self.current_step_idx < len(self.current_steps):
+            step_name = self.current_steps[self.current_step_idx]
+            self.get_logger().info(f"Executing Step {self.current_step_idx}: {step_name}")
+            
             step_msg = Int32()
-            step_msg.data = self.current_step
+            step_msg.data = self.current_step_idx
             self.step_pub.publish(step_msg)
-            return
-
-        step_msg = Int32()
-        step_msg.data = self.current_step
-        self.step_pub.publish(step_msg)
-
-        self.get_logger().info(
-            f"Step {self.current_step}: {self.task_steps[self.current_step]}"
-        )
-
-    def next_step(self):
-        if not self.running:
-            return
-
-        self.current_step += 1
-
-        if self.current_step >= len(self.task_steps):
-            self.current_step = len(self.task_steps) - 1
-            self.running = False
-
-        step_msg = Int32()
-        step_msg.data = self.current_step
-        self.step_pub.publish(step_msg)
-
-        self.get_logger().info(
-            f"Step {self.current_step}: {self.task_steps[self.current_step]}"
-        )
-
-    def run_task(self):
-        while self.running and rclpy.ok():
-            self.next_step()
-            if self.running:
-                import time
-
-                time.sleep(self.step_duration)
+            
+            # Simulate step execution - in real system, wait for feedback
+            self.current_step_idx += 1
+        else:
+            self.get_logger().info("Task Completed")
+            self.state = "COMPLETED"
+            self.current_step_idx = -1
 
     def execute_callback(self, msg):
-        if msg.data == "start":
-            if self.current_command:
-                self.run_task()
-        elif msg.data == "stop":
-            self.running = False
-            self.current_step = -1
-        elif msg.data == "reset":
-            self.running = False
-            self.current_step = -1
+        if msg.data == "reset":
+            self.state = "IDLE"
+            self.current_step_idx = -1
             self.current_command = None
+            self.current_steps = self.default_steps
 
 
 def main(args=None):

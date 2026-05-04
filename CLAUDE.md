@@ -18,14 +18,54 @@ export PYTHONPATH=$PYTHONPATH:/home/nvidia/poc/poc-orin
 export POC_ROOT=/home/nvidia/poc/poc-orin
 ```
 
+## Architecture (Primary: C++ RT/SHM)
+
+The primary control path uses C++ with Shared Memory for low-latency 1kHz control.
+
+### Data Flow (C++ RT Path)
+
+```
+HAL (1kHz, C++, SHM)              Perception (15Hz, Python)
+rt_cpp/hal_buddy                  camera_node.py
+        │                           /perception/camera
+        ▼                     ──►  perception_node.py
+State Estimator (500Hz, C++, SHM)    └─ detection.onnx
+rt_cpp/state_estimator
+        │
+        ▼
+ROS2 Bridge (100Hz, C++, SHM → ROS2)
+rt_cpp/ros2_bridge
+        │
+        ▼
+Policy Node (50Hz, Python, ROS2)
+policy/policy_node.py
+  /policy/action
+```
+
+### Layers
+
+| Layer | Frequency | Components | Path |
+|-------|-----------|------------|------|
+| HAL / RT Control | 1000 Hz | hal_buddy, state_estimator | `rt_cpp/` (C++ SHM) |
+| Policy | 50 Hz | policy_node, robot_bridge_node | `policy/`, `robot_bridge/` |
+| Perception | 15 Hz | camera_node, perception_node | `perception/` |
+
+### Legacy Path (Python/LCM)
+
+The legacy path (`hal_buddy_node.py` -> `state_estimator.py` via LCM) is kept for compatibility but deprecated.
+
 ## Key Commands
 
-### Bring-up (layered, run in order)
+### Bring-up (Primary C++ RT)
 ```bash
-./bringup/bringup_core.sh        # Check ROS 2, env, log dir
-./bringup/bringup_control.sh     # HAL + state estimator
-./bringup/bringup_perception.sh  # Camera + detection
-./bringup/bringup_all.sh         # All three in sequence
+./bringup/bringup_core.sh         # Check ROS 2, env, log dir
+./bringup/bringup_control_cpp.sh  # C++ RT HAL + state estimator + ROS2 Bridge
+./bringup/bringup_perception.sh   # Camera + detection
+```
+
+### Bring-up (Legacy Python/LCM)
+```bash
+./bringup/bringup_control.sh      # Deprecated
 ```
 
 ### Launch
@@ -57,52 +97,11 @@ sudo systemctl status robot-core
 sudo journalctl -u robot-core -f
 ```
 
-## Architecture
-
-### Data Flow
-
-```
-HAL (1kHz)                        Perception (15Hz)
-hal_buddy_node.py                 camera_node.py
-  /buddy/imu                        /perception/camera
-  /buddy/motor_state          ──►  perception_node.py
-  /buddy/hal/health                  └─ detection.onnx (ONNX Runtime CPU)
-        │
-        ▼
-rt_control/state_estimator.py (500Hz)
-  /state/pose, /tf
-        │
-        ▼
-policy/policy_node.py (50Hz)         ◄── /buddy/imu
-  /policy/action (Twist)
-  /policy/action_chunk (Float32MultiArray)
-  /policy/latency
-        │
-        ▼
-robot_bridge/robot_bridge_node.py
-        │
-        ▼
-middleware/recorder_node.py
-  /recorder/status
-```
-
-Higher-level nodes: `planner/planner_node.py`, `task_parser/task_parser_node.py`  
-GUI: `gui/scripts/demo_gui_tk.py` (Tkinter)
-
-### Layers
-
-| Layer | Frequency | Components |
-|-------|-----------|------------|
-| HAL / RT Control | 1000 Hz | hal_buddy_node, state_estimator |
-| Policy | 50 Hz | policy_node, robot_bridge_node |
-| Perception | 15 Hz | camera_node, perception_node |
-| Orchestration | event-driven | planner_node, task_parser_node |
-
 ### Models (`models/active/`)
 
 | File | Purpose | Input | Output | Budget |
 |------|---------|-------|--------|--------|
-| `simple_policy.onnx` | Locomotion MLP | (batch, 10): imu+joints | (batch, 6): linear+angular | <10ms |
+| `simple_policy.onnx` | Locomotion MLP | (batch, 13): imu+gyro+accel+detection | (batch, 32): joint commands | <10ms |
 | `detection.onnx` | Object detection CNN | (batch, 3, 224, 224) | (batch, 5): bbox+conf | <50ms |
 | `detection_v2.onnx` | Detection (v2) | same | same | — |
 

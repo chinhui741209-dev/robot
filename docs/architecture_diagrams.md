@@ -19,7 +19,7 @@ graph TD
     end
 
     subgraph Policy["策略層（50 Hz）"]
-        POL["policy_node\nsimple_policy.onnx\nMLP (10→6)\nTwist action"]
+        POL["policy_node\nsimple_policy.onnx\nMLP (13→32)\nJointCommand action"]
     end
 
     subgraph HAL["HAL 層（1000 Hz）"]
@@ -64,7 +64,7 @@ graph TD
     SE -->|"/tf TransformStamped"| REC
 
     POL --> M1
-    POL -->|"/policy/action Twist"| REC
+    POL -->|"/policy/joint_commands Float32MultiArray"| REC
 
     REC -->|"/recorder/status"| GUI
 
@@ -263,3 +263,4 @@ sequenceDiagram
 | `/policy/action_chunk` | Float32MultiArray | 50 | policy_node |
 | `/policy/latency` | Float32MultiArray | 1 | policy_node |
 | `/recorder/status` | String | 1 | recorder_node → GUI |
+e → GUI |

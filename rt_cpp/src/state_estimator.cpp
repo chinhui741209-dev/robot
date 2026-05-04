@@ -57,8 +57,10 @@ int main() {
 
         pthread_mutex_lock(&shm->mutex);
         
+        bool imu_updated = (shm->imu_counter != last_imu_counter);
+
         // Watchdog: Check if HAL is still providing data
-        if (shm->imu_counter == last_imu_counter) {
+        if (!imu_updated) {
             imu_stale_count++;
             if (imu_stale_count > 25) { // 25 samples @ 500Hz = 50ms
                 if (!shm->estop_active) {
@@ -68,22 +70,65 @@ int main() {
             }
         } else {
             imu_stale_count = 0;
-            last_imu_counter = shm->imu_counter;
         }
 
         // Integration logic...
-        if (!shm->estop_active && shm->imu_counter > last_imu_counter) {
+        if (!shm->estop_active && imu_updated) {
             double ax = shm->imu.linear_acceleration[0];
             double ay = shm->imu.linear_acceleration[1];
-            double az = shm->imu.linear_acceleration[2] - 9.8;
+            double az = shm->imu.linear_acceleration[2];
+            double gx = shm->imu.angular_velocity[0];
+            double gy = shm->imu.angular_velocity[1];
+            double gz = shm->imu.angular_velocity[2];
 
-            // Integrate (crude)
+            // 1. Position/Velocity Integration (with crude gravity compensation)
+            // Subtracting gravity from vertical acceleration assuming robot is mostly upright
             velocity[0] += ax * imu_dt;
             velocity[1] += ay * imu_dt;
-            velocity[2] += az * imu_dt;
+            velocity[2] += (az - 9.81) * imu_dt;
+            
+            // ZUPT: zero velocity when stationary (gyro near zero, raw accel near 1g)
+            double gyro_mag = sqrt(gx*gx + gy*gy + gz*gz);
+            double accel_mag = sqrt(ax*ax + ay*ay + az*az);
+            if (gyro_mag < 0.05 && std::abs(accel_mag - 9.81) < 0.3) {
+                velocity[0] = 0.0;
+                velocity[1] = 0.0;
+                velocity[2] = 0.0;
+            }
+
             position[0] += velocity[0] * imu_dt;
             position[1] += velocity[1] * imu_dt;
             position[2] += velocity[2] * imu_dt;
+
+            // 2. Attitude Fusion (Complementary Filter)
+            static double roll = 0, pitch = 0, yaw = 0;
+            
+            // Accel-based orientation
+            double acc_roll = atan2(ay, az);
+            double acc_pitch = atan2(-ax, sqrt(ay*ay + az*az));
+
+            // Gyro integration for delta
+            roll  += gx * imu_dt;
+            pitch += gy * imu_dt;
+            yaw   += gz * imu_dt;
+
+            // Fusion (98% gyro, 2% accel)
+            const double alpha = 0.98;
+            roll = alpha * roll + (1.0 - alpha) * acc_roll;
+            pitch = alpha * pitch + (1.0 - alpha) * acc_pitch;
+
+            // Convert Euler to Quaternion
+            double cy = cos(yaw * 0.5);
+            double sy = sin(yaw * 0.5);
+            double cp = cos(pitch * 0.5);
+            double sp = sin(pitch * 0.5);
+            double cr = cos(roll * 0.5);
+            double sr = sin(roll * 0.5);
+
+            shm->pose.orientation[0] = sr * cp * cy - cr * sp * sy; // x
+            shm->pose.orientation[1] = cr * sp * cy + sr * cp * sy; // y
+            shm->pose.orientation[2] = cr * cp * sy - sr * sp * cy; // z
+            shm->pose.orientation[3] = cr * cp * cy + sr * sp * sy; // w
             
             last_imu_counter = shm->imu_counter;
         }
@@ -93,12 +138,6 @@ int main() {
         shm->pose.position[0] = position[0];
         shm->pose.position[1] = position[1];
         shm->pose.position[2] = position[2];
-        
-        // Mock orientation
-        shm->pose.orientation[0] = std::sin(counter * 0.001);
-        shm->pose.orientation[1] = std::cos(counter * 0.001);
-        shm->pose.orientation[2] = std::sin(counter * 0.0005);
-        shm->pose.orientation[3] = std::cos(counter * 0.0005);
         
         shm->pose_counter = counter;
 

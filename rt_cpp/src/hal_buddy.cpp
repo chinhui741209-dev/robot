@@ -14,6 +14,45 @@ void signal_handler(int) {
     g_stop = true;
 }
 
+class HardwareInterfaceStub {
+public:
+    HardwareInterfaceStub() {
+        std::cout << "[HardwareInterfaceStub] Initializing hardware communication..." << std::endl;
+    }
+    ~HardwareInterfaceStub() {
+        std::cout << "[HardwareInterfaceStub] Closing hardware communication..." << std::endl;
+    }
+
+    void read(BuddyImu& imu, JointState& joint_state) {
+        // In a real implementation, this would call the SDK functions.
+        // For now, we provide static/stable data instead of a mock sine wave.
+        auto now = std::chrono::steady_clock::now();
+        imu.timestamp = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+        
+        // Identity quaternion
+        imu.orientation[0] = 0.0;
+        imu.orientation[1] = 0.0;
+        imu.orientation[2] = 0.0;
+        imu.orientation[3] = 1.0;
+        
+        for (int i = 0; i < 3; ++i) imu.angular_velocity[i] = 0.0;
+        imu.linear_acceleration[0] = 0.0;
+        imu.linear_acceleration[1] = 0.0;
+        imu.linear_acceleration[2] = 9.81;
+
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            joint_state.position[i] = 0.0;
+            joint_state.velocity[i] = 0.0;
+            joint_state.effort[i] = 0.0;
+        }
+    }
+
+    void write(const JointCommand& cmd) {
+        // In a real implementation, this would send commands to the actuators.
+        // (void)cmd; 
+    }
+};
+
 int main() {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -33,11 +72,14 @@ int main() {
         return 1;
     }
 
+    HardwareInterfaceStub hw;
     const int rate = 1000;
     const auto dt = std::chrono::nanoseconds(1000000000 / rate);
     auto next_time = std::chrono::steady_clock::now();
 
     uint64_t counter = 0;
+    uint64_t last_watchdog_counter = 0;
+    uint64_t watchdog_stale_count = 0;
     std::cout << "[hal_buddy] started at " << rate << " Hz via Shared Memory" << std::endl;
 
     while (!g_stop) {
@@ -45,31 +87,37 @@ int main() {
         std::this_thread::sleep_until(next_time);
 
         counter++;
-        auto now = std::chrono::steady_clock::now();
-        int64_t ts = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-
+        
         pthread_mutex_lock(&shm->mutex);
         
-        shm->imu.timestamp = ts;
-        shm->imu.orientation[0] = std::sin(counter * 0.001);
-        shm->imu.orientation[1] = std::cos(counter * 0.001);
-        shm->imu.orientation[2] = std::sin(counter * 0.0005);
-        shm->imu.orientation[3] = std::cos(counter * 0.0005);
-        
-        shm->imu.angular_velocity[0] = std::sin(counter * 0.01) * 0.1;
-        shm->imu.angular_velocity[1] = std::cos(counter * 0.01) * 0.1;
-        shm->imu.angular_velocity[2] = std::sin(counter * 0.005) * 0.05;
-        
-        shm->imu.linear_acceleration[0] = std::sin(counter * 0.001) * 9.8;
-        shm->imu.linear_acceleration[1] = std::cos(counter * 0.001) * 9.8;
-        shm->imu.linear_acceleration[2] = 9.8;
-
-        // Mock 32-DOF Joint States
-        for (int i = 0; i < NUM_JOINTS; ++i) {
-            shm->joint_state.position[i] = std::sin(counter * 0.001 + i * 0.1);
-            shm->joint_state.velocity[i] = std::cos(counter * 0.001 + i * 0.1);
-            shm->joint_state.effort[i] = 0.0;
+        // Watchdog: Check if controller is alive
+        if (shm->watchdog_counter == last_watchdog_counter) {
+            watchdog_stale_count++;
+            if (watchdog_stale_count > 100) { // 100ms
+                if (!shm->estop_active) {
+                    std::cerr << "[hal_buddy] WATCHDOG TRIGGERED: No heartbeat from controller!" << std::endl;
+                    shm->estop_active = true;
+                }
+            }
+        } else {
+            watchdog_stale_count = 0;
+            last_watchdog_counter = shm->watchdog_counter;
         }
+
+        // Handle E-stop (Zero commands)
+        if (shm->estop_active) {
+            for (int i = 0; i < NUM_JOINTS; ++i) {
+                shm->joint_cmd.tau_ff[i] = 0.0;
+                shm->joint_cmd.kp[i] = 0.0;
+                shm->joint_cmd.kd[i] = 0.0;
+            }
+        }
+
+        // Read from hardware
+        hw.read(shm->imu, shm->joint_state);
+        
+        // Write to hardware
+        hw.write(shm->joint_cmd);
 
         shm->imu_counter = counter;
 
@@ -78,7 +126,7 @@ int main() {
         pthread_mutex_unlock(&shm->mutex);
 
         if (counter % 1000 == 0) {
-            std::cout << "[hal_buddy] " << counter / 1000 << "k msgs written to SHM" << std::endl;
+            std::cout << "[hal_buddy] " << counter / 1000 << "k msgs processed" << std::endl;
         }
     }
 

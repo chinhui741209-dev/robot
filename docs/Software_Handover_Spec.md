@@ -1,7 +1,7 @@
 # Software Environment & Development Handover Specification
 # 軟體環境與開發接手交付規格
 
-**文件版本**：v1.3.0　｜　**日期**：2026-05-02　｜　**平台**：NVIDIA AGX Orin (aarch64)
+**文件版本**：v1.4.0　｜　**日期**：2026-05-04　｜　**平台**：NVIDIA AGX Orin (aarch64)
 
 > 本文件依據 PDF 10 層平台化架構優化，涵蓋 C++ RT 控制層、32-DOF 關節支援、共享記憶體 (SHM) 以及 TensorRT GPU 加速規格。
 
@@ -12,9 +12,9 @@
 | 項目 | 內容 |
 |------|------|
 | 專案名稱 | Robot POC — Vision-Language-Action (VLA) 機械臂操控系統 |
-| 目前階段 | Phase 3: Hardware-Ready & AI Acceleration |
-| 對應軟體 Release Tag | v0.3 |
-| 更新日期 | 2026-05-02 |
+| 目前階段 | Phase 3: Hardware-Ready & Perception-Policy Fusion |
+| 對應軟體 Release Tag | v0.4 |
+| 更新日期 | 2026-05-04 |
 
 ---
 
@@ -54,20 +54,20 @@
 | 故障類型 | 偵測條件 | 反應策略 | 恢復條件 |
 |---------|---------|---------|---------|
 | **RT Heartbeat Lost** | `hal_buddy` 停止更新資料 > 50ms | `state_estimator` 觸發 **WATCHDOG** | 重啟 HAL 且手動清除 `estop_active` |
-| **Emergency Stop** | `estop_active` 旗標被設為 true | 立即停止所有積分運算與馬達指令輸出 | 人工確認安全後重置 SHM |
+| **Emergency Stop** | `estop_active` 旗標被設為 true | 立即停止所有積分運算與馬達指令輸出 | 執行 `rt_cpp/src/test_safety_logic.cpp` 的重置邏輯 |
 
 ---
 
-## 20. Model / ONNX / TensorRT Deployment Spec (v1.3)
+## 20. Model / ONNX / TensorRT Deployment Spec (v1.4)
 
 | Model | Version | Backend (Preferred) | Latency Target (Orin GPU) | Fallback |
 |-------|---------|---------------------|---------------------------|----------|
 | **Detection** | v2.0 | **TensorRT (.engine)** | **< 10 ms** | ONNX Runtime CPU |
-| **Locomotion Policy** | v1.0 | **TensorRT (.engine)** | **< 2 ms** | ONNX Runtime CPU |
+| **Locomotion Policy** | v1.1 | **TensorRT (.engine)** | **< 2 ms** | **Input(13-dim), Output(32-dim)** |
 
 ### AI 優化管線：
 1. **轉換**：使用 `models/build_tensorrt.sh` 產生針對 Orin GPU 優化的 Engine。
-2. **推論封裝**：透過 `perception/trt_inference.py` 進行非同步推論管理。
+2. **推論封裝**：透過 `policy/policy_node.py` 整合視覺感知輸入 (/perception/objects)。
 
 ---
 

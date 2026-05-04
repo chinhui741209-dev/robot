@@ -1,0 +1,11 @@
+numpy
+lcm
+onnx
+onnxruntime
+opencv-python
+Pillow
+pycuda
+pytest
+torch
+ultralytics
+# tensorrt is typically pre-installed via JetPack on Orin

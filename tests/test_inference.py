@@ -18,14 +18,14 @@ def test_perception_model_io():
     assert output_data[0, 4] <= 10.0 # 模擬信心值範圍
 
 def test_policy_inference_cadence():
-    """驗證 Policy 推論步長與資料對齊"""
-    # 模擬 10 維感測輸入
-    sensor_input = np.random.randn(1, 10).astype(np.float32)
-    assert sensor_input.shape == (1, 10)
-    
-    # 模擬輸出 6D Twist [linear_xyz, angular_xyz]
-    action = np.random.randn(1, 6).astype(np.float32)
-    assert action.shape == (1, 6)
+    """Validate policy input/output dimensions match current 13D->32D model spec."""
+    # 13-dim: Quat(4) + Gyro(3) + Accel(3) + Detection(3)
+    sensor_input = np.random.randn(1, 13).astype(np.float32)
+    assert sensor_input.shape == (1, 13), f"Expected (1,13), got {sensor_input.shape}"
+
+    # 32-dim: joint position targets for 32-DOF robot
+    action = np.random.randn(1, 32).astype(np.float32)
+    assert action.shape == (1, 32), f"Expected (1,32), got {action.shape}"
 
 def test_camera_latency_threshold():
     """驗證相機延遲計算邏輯"""

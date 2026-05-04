@@ -2,8 +2,8 @@
 """
 Simple Locomotion Policy Model Generator
  Generates a simple MLP policy model for robot locomotion control.
- Input: 10-dim sensor state (IMU, joint positions, velocities)
- Output: 6-dim action (linear.x, y, z, angular.x, y, z)
+ Input: 13-dim sensor state (Quat(4) + Gyro(3) + Accel(3) + Detection(3))
+ Output: 32-dim action (joint position targets for 32-DOF robot)
 """
 
 import torch
@@ -12,7 +12,7 @@ import os
 
 
 class SimpleLocomotionPolicy(nn.Module):
-    def __init__(self, input_dim=10, hidden_dim=64, output_dim=6):
+    def __init__(self, input_dim=13, hidden_dim=64, output_dim=32):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -30,10 +30,10 @@ class SimpleLocomotionPolicy(nn.Module):
 
 
 def generate_model(output_path="models/active/simple_policy.onnx"):
-    model = SimpleLocomotionPolicy(input_dim=10, hidden_dim=64, output_dim=6)
+    model = SimpleLocomotionPolicy(input_dim=13, hidden_dim=64, output_dim=32)
     model.eval()
 
-    dummy_input = torch.zeros(1, 10)
+    dummy_input = torch.zeros(1, 13)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 

@@ -60,10 +60,22 @@ test_policy() {
     fi
 }
 
+test_rt_cpp() {
+    echo -n "Testing C++ RT module... "
+    if [ -d "$POC_ROOT/rt_cpp" ]; then
+        echo "PASS"
+        PASSED=$((PASSED+1))
+    else
+        echo "FAIL"
+        FAILED=$((FAILED+1))
+    fi
+}
+
 # Run tests
 test_python
 test_ros2
 test_hal
+test_rt_cpp
 test_policy
 
 echo ""

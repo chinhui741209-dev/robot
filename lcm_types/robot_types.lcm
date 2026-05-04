@@ -7,6 +7,22 @@ struct BuddyImu {
     double linear_acceleration[3];
 }
 
+struct JointState {
+    int64_t timestamp;
+    double position[32];
+    double velocity[32];
+    double effort[32];
+}
+
+struct JointCommand {
+    int64_t timestamp;
+    double q_des[32];
+    double dq_des[32];
+    double kp[32];
+    double kd[32];
+    double tau_ff[32];
+}
+
 struct MotorState {
     int64_t timestamp;
     double linear[3];
