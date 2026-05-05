@@ -6,6 +6,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/float32_multi_array.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "rt_cpp/shared_memory.hpp"
 
@@ -27,6 +28,9 @@ public:
             "/estop_reset",
             std::bind(&RobotRTBridge::estop_reset_srv_callback, this,
                       std::placeholders::_1, std::placeholders::_2));
+        joint_cmd_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+            "/policy/joint_commands", 10,
+            std::bind(&RobotRTBridge::joint_cmd_callback, this, std::placeholders::_1));
 
         // Initialize joint names
         joint_msg_.name.resize(NUM_JOINTS);
@@ -121,6 +125,21 @@ private:
         }
     }
 
+    void joint_cmd_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
+        if (!shm_ || shm_->estop_active) return;
+        if (static_cast<int>(msg->data.size()) < NUM_JOINTS) {
+            RCLCPP_WARN_ONCE(this->get_logger(),
+                "joint_cmd: expected %d values, got %zu — ignoring",
+                NUM_JOINTS, msg->data.size());
+            return;
+        }
+        pthread_mutex_lock(&shm_->mutex);
+        for (int i = 0; i < NUM_JOINTS; ++i) {
+            shm_->joint_cmd.q_des[i] = static_cast<double>(msg->data[i]);
+        }
+        pthread_mutex_unlock(&shm_->mutex);
+    }
+
     void estop_reset_srv_callback(
         const std_srvs::srv::Trigger::Request::SharedPtr /*request*/,
         std_srvs::srv::Trigger::Response::SharedPtr response)
@@ -147,6 +166,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr health_pub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr estop_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr estop_reset_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr joint_cmd_sub_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr estop_reset_srv_;
     rclcpp::TimerBase::SharedPtr timer_;
     sensor_msgs::msg::JointState joint_msg_;

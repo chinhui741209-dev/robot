@@ -78,13 +78,22 @@ else
     echo "  Robot Bridge: Not found"
 fi
 
-echo "[7/7] Starting GUI..."
-if [ -f "$POC_ROOT/gui/scripts/demo_gui.py" ]; then
-    nohup python3 "$POC_ROOT/gui/scripts/demo_gui.py" > "$POC_ROOT/logs/gui.log" 2>&1 &
-    GUI_PID=$!
-    echo "  GUI PID: $GUI_PID"
+echo "[7/8] Starting Policy Node (Brain)..."
+if [ -f "$POC_ROOT/policy/policy_node.py" ]; then
+    nohup python3 "$POC_ROOT/policy/policy_node.py" --ros-args -p sim:=True > "$POC_ROOT/logs/policy.log" 2>&1 &
+    POLICY_PID=$!
+    echo "  Policy PID: $POLICY_PID"
+    sleep 1
 else
-    echo "  GUI: Not found"
+    echo "  Policy: Not found"
+fi
+
+echo "[8/8] Starting GUI (Digital Twin)..."
+if [ -f "$POC_ROOT/gui/scripts/demo_gui_tk.py" ]; then
+    # Note: GUI requires X server / DISPLAY
+    python3 "$POC_ROOT/gui/scripts/demo_gui_tk.py"
+else
+    echo "  GUI: demo_gui_tk.py not found"
 fi
 
 echo ""

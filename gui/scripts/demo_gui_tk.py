@@ -5,6 +5,7 @@ Demo GUI - Tech-style interface for VLA POC Demo
 """
 
 import os
+import math
 # Force set DISPLAY for systemd/background services
 if "DISPLAY" not in os.environ:
     os.environ["DISPLAY"] = ":0"
@@ -14,11 +15,20 @@ from tkinter import ttk
 import cv2
 import numpy as np
 from PIL import Image as PILImage, ImageTk
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String, Int32, Float32MultiArray
-from sensor_msgs.msg import Image
 import threading
+
+try:
+    import rclpy
+    from rclpy.node import Node
+    from std_msgs.msg import String, Int32, Float32MultiArray
+    from sensor_msgs.msg import Image
+    HAS_ROS2 = True
+except ImportError:
+    HAS_ROS2 = False
+    # Define dummy message classes for type references if needed, 
+    # though we mainly use them inside methods that won't be called in mock mode.
+    class DummyMsg: pass
+    String = Int32 = Float32MultiArray = Image = DummyMsg
 
 
 class DemoGUI:
@@ -126,9 +136,8 @@ class DemoGUI:
         self.camera_frame = self.create_panel(grid, 0, 0, "CAMERA FEED")
         self.command_frame = self.create_panel(grid, 0, 1, "COMMAND")
         self.step_frame = self.create_panel(grid, 1, 0, "TASK STEPS")
-        self.motor_frame = self.create_panel(grid, 1, 1, "MOTOR STATUS")
+        self.motor_frame = self.create_panel(grid, 1, 1, "MOTOR CONTROL (32-DOF DIGITAL TWIN)")
 
-        # Camera display label inside the camera panel
         self.camera_label = tk.Label(
             self.camera_frame,
             bg=self.colors["panel"],
@@ -137,9 +146,8 @@ class DemoGUI:
             font=("JetBrains Mono", 10),
         )
         self.camera_label.pack(fill=tk.BOTH, expand=True)
-        self._photo_ref = None  # prevent GC
+        self._photo_ref = None
 
-        # Command display
         inner_cmd = tk.Frame(self.command_frame, bg=self.colors["panel"])
         inner_cmd.pack(fill=tk.BOTH, expand=True)
 
@@ -173,7 +181,6 @@ class DemoGUI:
         )
         self.command_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Task steps display
         self.step_label = tk.Label(
             self.step_frame,
             text="Waiting...",
@@ -183,17 +190,22 @@ class DemoGUI:
         )
         self.step_label.pack(fill=tk.BOTH, expand=True)
 
-        # Motor status display
-        self.motor_canvas = tk.Canvas(
+        self.skeleton_canvas = tk.Canvas(
             self.motor_frame,
             bg=self.colors["panel"],
             highlightthickness=0,
+            width=300,
+            height=400
         )
-        self.motor_canvas.pack(fill=tk.BOTH, expand=True)
+        self.skeleton_canvas.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        self.motor_info_frame = tk.Frame(self.motor_frame, bg=self.colors["panel"])
+        self.motor_info_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5)
+
         self.motor_labels = {}
         for i, m in enumerate(self.motors):
             label = tk.Label(
-                self.motor_canvas,
+                self.motor_info_frame,
                 text=f"{m}: 0.0",
                 fg=self.colors["text"],
                 font=("JetBrains Mono", 10),
@@ -201,6 +213,57 @@ class DemoGUI:
             )
             label.pack(anchor="w", pady=2)
             self.motor_labels[m] = label
+        
+        self.setup_skeleton()
+
+    def setup_skeleton(self):
+        c = self.skeleton_canvas
+        w, h = 300, 400
+        cx, cy = w // 2, h // 2
+        
+        self.skel_lines = [
+            c.create_line(cx, 80, cx, 200, fill="#333344", width=4), 
+            c.create_line(cx, 100, cx-60, 150, fill="#333344", width=3), 
+            c.create_line(cx-60, 150, cx-100, 220, fill="#333344", width=3), 
+            c.create_line(cx, 100, cx+60, 150, fill="#333344", width=3), 
+            c.create_line(cx+60, 150, cx+100, 220, fill="#333344", width=3), 
+            c.create_line(cx, 200, cx-40, 300, fill="#333344", width=3), 
+            c.create_line(cx-40, 300, cx-50, 380, fill="#333344", width=3), 
+            c.create_line(cx, 200, cx+40, 300, fill="#333344", width=3), 
+            c.create_line(cx+40, 300, cx+50, 380, fill="#333344", width=3), 
+            c.create_oval(cx-25, 30, cx+25, 80, outline="#333344", width=2) 
+        ]
+
+        self.joint_map = {
+            0: (cx, 90, "Neck"), 1: (cx, 150, "Waist"), 2: (cx, 55, "Head-Yaw"),
+            3: (cx-20, 100, "R-Shoulder-P"), 4: (cx-40, 100, "R-Shoulder-R"), 5: (cx-60, 150, "R-Elbow"),
+            6: (cx-80, 185, "R-Wrist-P"), 7: (cx-100, 220, "R-Wrist-R"), 8: (cx-110, 235, "R-Gripper"),
+            10: (cx+20, 100, "L-Shoulder-P"), 11: (cx+40, 100, "L-Shoulder-R"), 12: (cx+60, 150, "L-Elbow"),
+            13: (cx+80, 185, "L-Wrist-P"), 14: (cx+100, 220, "L-Wrist-R"), 15: (cx+110, 235, "L-Gripper"),
+            17: (cx-20, 200, "R-Hip-P"), 18: (cx-30, 200, "R-Hip-R"), 19: (cx-40, 300, "R-Knee"),
+            20: (cx-45, 340, "R-Ankle-P"), 21: (cx-50, 380, "R-Ankle-R"),
+            24: (cx+20, 200, "L-Hip-P"), 25: (cx+30, 200, "L-Hip-R"), 26: (cx+40, 300, "L-Knee"),
+            27: (cx+45, 340, "L-Ankle-P"), 28: (cx+50, 380, "L-Ankle-R"),
+            31: (cx, 120, "Core-P")
+        }
+
+        self.joint_ui = {}
+        for idx, (x, y, name) in self.joint_map.items():
+            light = c.create_oval(x-5, y-5, x+5, y+5, fill="#222233", outline=self.colors["accent"])
+            self.joint_ui[idx] = {"light": light, "name": name, "last_val": 0.0}
+
+    def update_skeleton_data(self, data):
+        c = self.skeleton_canvas
+        for idx, val in enumerate(data):
+            if idx in self.joint_ui:
+                ui = self.joint_ui[idx]
+                intensity = min(255, int(abs(val) * 255 * 5))
+                if abs(val) > 0.01:
+                    color = f"#{intensity:02x}ff88" if val > 0 else f"#ff{intensity:02x}88"
+                else:
+                    color = "#222233"
+                c.itemconfig(ui["light"], fill=color)
+                ui["last_val"] = val
 
     def create_panel(self, parent, row, col, title):
         frame = tk.LabelFrame(
@@ -217,7 +280,39 @@ class DemoGUI:
         return frame
 
     def init_ros(self):
-        threading.Thread(target=self.ros_spinner, daemon=True).start()
+        try:
+            import rclpy
+            threading.Thread(target=self.ros_spinner, daemon=True).start()
+        except ImportError:
+            print("[GUI] ROS 2 not found. Starting MOCK MODE for demonstration.")
+            threading.Thread(target=self.mock_spinner, daemon=True).start()
+
+    def mock_spinner(self):
+        """Simulates incoming data when ROS 2 is unavailable"""
+        import time
+        import random
+        t = 0
+        while self.running:
+            # Simulate 32-DOF Joint Commands (Sine waves)
+            mock_data = [math.sin(t + i*0.2) * 0.5 for i in range(32)]
+            
+            def _update(d=mock_data):
+                self.update_skeleton_data(d)
+                # Update main 4 motors too
+                for i, m in enumerate(self.motors):
+                    self.motor_values[m] = d[i]
+                    self.motor_labels[m].configure(text=f"{m}: {d[i]:.2f}")
+            
+            self.root.after(0, _update)
+            
+            # Simulate random Step changes
+            if random.random() > 0.98:
+                step_idx = random.randint(0, len(self.task_steps)-1)
+                self.root.after(0, lambda idx=step_idx: self.step_label.configure(
+                    text=self.task_steps[idx], fg=self.colors["active"]))
+
+            time.sleep(0.05) # 20 Hz
+            t += 0.1
 
     def ros_spinner(self):
         rclpy.init()
@@ -235,7 +330,7 @@ class DemoGUI:
             Int32, "/planner/current_step", self.step_callback, 10
         )
         self.motor_sub = self.node.create_subscription(
-            Float32MultiArray, "/joint_states", self.motor_callback, 10
+            Float32MultiArray, "/policy/joint_commands", self.motor_callback, 10
         )
 
         while self.running and rclpy.ok():
@@ -254,7 +349,6 @@ class DemoGUI:
         try:
             data = np.frombuffer(msg.data, dtype=np.uint8)
             expected_size = msg.height * msg.width * 3
-            
             if len(data) == expected_size:
                 frame = data.reshape(msg.height, msg.width, 3)
                 if msg.encoding in ["bgr8", "bgr"]:
@@ -262,7 +356,6 @@ class DemoGUI:
                 else:
                     rgb = frame
             else:
-                print(f"[GUI] Image size mismatch! Expected {expected_size}, got {len(data)}. Encoding: {msg.encoding}, Step: {msg.step}")
                 bytes_per_pixel = msg.step // msg.width if msg.width > 0 else 3
                 if len(data) == msg.height * msg.step:
                     frame = data.reshape(msg.height, msg.width, bytes_per_pixel)
@@ -282,13 +375,11 @@ class DemoGUI:
             scale = min(max_w / w, max_h / h)
             new_w, new_h = int(w * scale), int(h * scale)
             rgb = cv2.resize(rgb, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-
             photo = ImageTk.PhotoImage(PILImage.fromarray(rgb))
 
             def _update(p=photo):
                 self._photo_ref = p
                 self.camera_label.configure(image=p, text="")
-
             self.root.after(0, _update)
         except Exception as e:
             print(f"[GUI] image_callback error: {e}")
@@ -297,45 +388,35 @@ class DemoGUI:
         def _update():
             self.current_command = msg.data
             self.command_label.configure(text=msg.data, fg=self.colors["text"])
-
         self.root.after(0, _update)
 
     def step_callback(self, msg):
         step_idx = msg.data
-        if 0 <= step_idx < len(self.task_steps):
-            step_name = self.task_steps[step_idx]
-        else:
-            step_name = "Unknown"
-
+        step_name = self.task_steps[step_idx] if 0 <= step_idx < len(self.task_steps) else "Unknown"
         def _update():
             self.current_step_display = step_name
             self.step_label.configure(text=step_name, fg=self.colors["active"])
-
         self.root.after(0, _update)
 
     def motor_callback(self, msg):
         try:
             data = list(msg.data)
-            if len(data) >= 4:
+            if len(data) >= 32:
                 for i, m in enumerate(self.motors):
                     self.motor_values[m] = data[i]
+                def _update_ui(d=data):
+                    self.update_skeleton_data(d)
+                    for m, label in self.motor_labels.items():
+                        label.configure(text=f"{m}: {self.motor_values[m]:.2f}")
+                self.root.after(0, _update_ui)
         except Exception as e:
             print(f"[GUI] motor_callback error: {e}")
 
-        def _update():
-            for m, label in self.motor_labels.items():
-                label.configure(text=f"{m}: {self.motor_values[m]:.2f}")
-
-        self.root.after(0, _update)
-
     def send_command(self, event=None):
         cmd = self.command_entry.get().strip()
-        if not cmd:
-            return
-        
+        if not cmd: return
         self.command_entry.delete(0, tk.END)
         self.command_label.configure(text=f"Sent: {cmd}")
-        
         if hasattr(self, "command_pub") and self.command_pub:
             msg = String()
             msg.data = cmd
@@ -348,11 +429,9 @@ class DemoGUI:
         self.running = False
         self.root.destroy()
 
-
 def main():
     gui = DemoGUI()
     gui.run()
-
 
 if __name__ == "__main__":
     main()
