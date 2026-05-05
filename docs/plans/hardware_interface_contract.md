@@ -1,49 +1,37 @@
-# Hardware Interface Contract (v1.0)
+# 硬體介面標準化合約 (Hardware Interface Contract v1.0)
 
-## 1. Overview
-This document defines the standardized hardware interface for the robot. All HAL implementations and hardware bridges must adhere to these specifications.
+## 1. 簡介 (Introduction)
+本文件定義了「通用機器人平台 (Platform)」與「硬體供應商 (Vendor)」之間的通訊介面規範。透過此標準化介面，平台可以無視底層硬體差異，直接下達任務並取得感測數據。
 
-## 2. Communications & Timing
-*   **Primary Control Loop:** 1000 Hz (1ms period)
-*   **Shared Memory (SHM) Updates:** Must occur within the 1000 Hz loop.
-*   **Timestamp Sync:** All sensor data must use `std::chrono::steady_clock` converted to microseconds for `timestamp` fields.
-*   **Jitter Tolerance:** Control loop jitter should be < 100μs.
+## 2. 通訊機制 (Communication Mechanism)
+*   **技術實作**: POSIX Shared Memory (SHM)。
+*   **共享名稱**: `/robot_shared_data`。
+*   **存取限制**: 存取任何欄位前必須取得 `pthread_mutex_t` 鎖。
+*   **同步頻率**: 
+    *   Vendor 寫入頻率建議: 1000 Hz。
+    *   Platform 監控頻率: 100 Hz - 500 Hz。
 
-## 3. Sensor Data Standards
-### 3.1 IMU (`BuddyImu`)
-*   **Orientation:** Quaternion (x, y, z, w). Normalized.
-*   **Angular Velocity:** [rad/s].
-*   **Linear Acceleration:** [m/s²]. Includes gravity (approx 9.81 on Z when flat).
+## 3. 欄位擁有權與責任 (Ownership & Responsibility)
 
-### 3.2 Joint States (`JointState`)
-*   **Position:** [rad].
-*   **Velocity:** [rad/s].
-*   **Effort:** [Nm] (Torque).
-*   **Max DOF:** 32.
+為了確保多進程穩定，各欄位被分配給唯一的「寫入者 (Owner)」。
 
-## 4. Control Command Standards (`JointCommand`)
-*   **q_des:** Desired position [rad].
-*   **dq_des:** Desired velocity [rad/s].
-*   **kp:** Proportional gain [Nm/rad].
-*   **kd:** Derivative gain [Nm/(rad/s)].
-*   **tau_ff:** Feed-forward torque [Nm].
-*   **Safety Limits:** HAL must enforce hard joint limits and velocity limits.
+### 3.1 供應商負責 (Vendor Owned - 寫入)
+供應商提供的 Adapter 必須準確填寫以下欄位：
+*   **`imu`**: 實體感測器的原始或融合數據。
+*   **`joint_state`**: 32 個關節的目前位置 (rad)、速度 (rad/s) 與力矩 (Nm)。
+*   **`imu_counter`**: 每寫入一次數據必須遞增一次。
+*   **`robot_type`**: 於初始化時聲明機器人型態 (如：AMR, Quadruped)。
 
-## 5. Safety & Fault States
-### 5.1 Emergency Stop (E-Stop)
-*   **SHM Flag:** `estop_active` (bool).
-*   **Logic:**
-    *   If `estop_active == true`, HAL must zero all `tau_ff` and set `kp`, `kd` to safe idle values or zero (depending on robot type).
-    *   Once triggered, `estop_active` can only be cleared by an explicit "Reset" command (to be implemented in `RobotSharedData`).
+### 3.2 平台負責 (Platform Owned - 寫入)
+*   **`joint_cmd`**: 發送給硬體的控制命令。Vendor 應讀取此欄位並轉換為驅動器指令。
+*   **`watchdog_counter`**: 平台發出的心跳信號。Vendor 應監控此值，若 100ms 未變動應進入安全模式。
+*   **`pose`**: 由平台狀態估計器產生的融合位姿。
 
-### 5.2 Fault Mapping
-Hardware faults must be mapped to the `watchdog_counter` or a dedicated `fault_bits` field (TBD).
-*   **Bit 0:** CAN Bus Error
-*   **Bit 1:** Motor Overheat
-*   **Bit 2:** Battery Low
-*   **Bit 3:** IMU Disconnected
+## 4. 安全規範 (Safety Protocol)
+*   **E-Stop**: 當 `estop_active` 為 `true` 時，Vendor 必須立即物理切斷馬達動力或進入零力矩模式。
+*   **Watchdog**: 供應商 Adapter 必須具備 Watchdog 功能，偵測到平台當機時應主動剎車。
 
-## 6. Watchdog Protocol
-*   **HAL Watchdog:** Increments `imu_counter` every 1ms.
-*   **Controller Watchdog:** Must increment `watchdog_counter` in SHM at least every 20ms (50Hz).
-*   **HAL Action:** If `watchdog_counter` has not changed for > 100ms, HAL enters E-stop mode.
+## 5. 接入流程 (Onboarding)
+1. 廠商下載並包含 `shared_memory.hpp`。
+2. 實作 `init_shared_memory(false)` 附加至記憶體區段。
+3. 建立 1000Hz 迴圈，持續同步物理狀態至 `joint_state` 並讀取 `joint_cmd`。

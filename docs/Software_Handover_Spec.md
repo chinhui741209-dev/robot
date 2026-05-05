@@ -26,14 +26,15 @@
 | 是否使用 PREEMPT_RT | **建議為是** | C++ RT 模組已支援 `SCHED_FIFO` |
 | 即時通訊機制 | **POSIX Shared Memory (SHM)** | 取代 L3/L4 的 LCM 通訊，極低延遲 |
 | AI 推理引擎 | **TensorRT 10.x (GPU)** | 支援 FP16 加速，大幅降低感知延遲 |
+| 硬體介面合約 | **v1.0.0 (SHM-based)** | 支援多供應商黑盒接入與型態自識別 |
 
 ---
 
-## 6. 通訊架構 (v1.3 Optimized)
+## 6. 通訊架構 (v1.5 Optimized)
 
 | 通訊類型 | 用途 | 實作方式 | 頻率 | 備註 |
 |---------|------|---------|------------|------|
-| **Shared Memory** | **HAL ↔ RT Control 核心通道** | POSIX SHM + Mutex | 1000 Hz | **32-DOF 關節支援** |
+| **Standardized SHM** | **HAL ↔ Platform 核心合約** | POSIX SHM + Versioning | 1000 Hz | **支援 32-DOF / 多型態** |
 | ROS 2 / DDS | 感知、規劃、UI 層主幹通訊 | CycloneDDS | 1–100 Hz | |
 | **Joint States** | **全機關節狀態發布** | `/joint_states` | 100 Hz | 標準 ROS 2 JointState |
 
@@ -78,6 +79,12 @@
 | **robot_rt_cpp** | C++17 | Source | **SHM RT 核心、Watchdog、ROS2 Bridge** |
 | **perception** | Python | Source | 支援 TensorRT/ONNX 雙模推論 |
 | **policy** | Python | Source | 策略推論 (支援 ROS2/LCM/TensorRT) |
+| **models** | Shell/ONNX | Scripts | 模型轉換與管理工具 |
+
+---
+
+*本文件由 Gemini CLI 根據 Sync-Doc 技能規範自動更新，版本 v1.3.0，日期 2026-05-02*
+thon | Source | 策略推論 (支援 ROS2/LCM/TensorRT) |
 | **models** | Shell/ONNX | Scripts | 模型轉換與管理工具 |
 
 ---

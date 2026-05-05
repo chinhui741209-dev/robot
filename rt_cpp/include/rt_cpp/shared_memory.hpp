@@ -15,44 +15,66 @@ namespace rt_cpp {
 #define NUM_JOINTS 32
 #define SHM_SIZE sizeof(RobotSharedData)
 
+// Interface Metadata for multi-vendor standardization
+#define INTERFACE_VERSION 100 // v1.0.0
+#define ROBOT_TYPE_GENERIC 0
+#define ROBOT_TYPE_ARM     1
+#define ROBOT_TYPE_BIPED   2
+#define ROBOT_TYPE_QUAD    3
+#define ROBOT_TYPE_AMR     4
+
 struct BuddyImu {
-    int64_t timestamp;
-    double orientation[4];         // x, y, z, w
-    double angular_velocity[3];    // x, y, z
-    double linear_acceleration[3]; // x, y, z
+    int64_t timestamp;             // [OWNER: VENDOR]
+    double orientation[4];         // [OWNER: VENDOR] x, y, z, w
+    double angular_velocity[3];    // [OWNER: VENDOR] x, y, z
+    double linear_acceleration[3]; // [OWNER: VENDOR] x, y, z
 };
 
 struct JointState {
-    double position[NUM_JOINTS];
-    double velocity[NUM_JOINTS];
-    double effort[NUM_JOINTS];
+    double position[NUM_JOINTS];   // [OWNER: VENDOR] rad
+    double velocity[NUM_JOINTS];   // [OWNER: VENDOR] rad/s
+    double effort[NUM_JOINTS];     // [OWNER: VENDOR] Nm
 };
 
 struct JointCommand {
-    double q_des[NUM_JOINTS];
-    double dq_des[NUM_JOINTS];
-    double kp[NUM_JOINTS];
-    double kd[NUM_JOINTS];
-    double tau_ff[NUM_JOINTS];
+    double q_des[NUM_JOINTS];      // [OWNER: PLATFORM] target pos
+    double dq_des[NUM_JOINTS];     // [OWNER: PLATFORM] target vel
+    double kp[NUM_JOINTS];         // [OWNER: PLATFORM] proportional gain
+    double kd[NUM_JOINTS];         // [OWNER: PLATFORM] derivative gain
+    double tau_ff[NUM_JOINTS];     // [OWNER: PLATFORM] feed-forward torque
 };
 
 struct StatePose {
-    int64_t timestamp;
-    double position[3];    // x, y, z
-    double orientation[4]; // x, y, z, w
+    int64_t timestamp;             // [OWNER: PLATFORM]
+    double position[3];            // [OWNER: PLATFORM] x, y, z
+    double orientation[4];         // [OWNER: PLATFORM] x, y, z, w
 };
 
+/**
+ * @brief Standardized Hardware Interface Contract
+ * This structure is the ONLY touchpoint between Platform and Vendor.
+ */
 struct RobotSharedData {
     pthread_mutex_t mutex;
+    
+    // Header Info
+    uint32_t version;              // Contract version (INTERFACE_VERSION)
+    uint32_t robot_type;           // Type of robot connected
+    
+    // Vendor Data (Inbound to Platform)
     BuddyImu imu;
-    JointState joint_state;        // Updated: 32-DOF
-    JointCommand joint_cmd;        // Updated: 32-DOF
-    StatePose pose;
-    bool stop;
-    bool estop_active;             // Hardware-level emergency stop flag
-    uint64_t watchdog_counter;     // For heartbeat monitoring
-    uint64_t imu_counter;
-    uint64_t pose_counter;
+    JointState joint_state;
+    uint64_t imu_counter;          // Incremented by Vendor @1kHz
+    
+    // Platform Data (Outbound to Vendor)
+    JointCommand joint_cmd;
+    StatePose pose;                // Calculated by Platform
+    uint64_t watchdog_counter;     // Incremented by Platform @100Hz
+    uint64_t pose_counter;         // Incremented by Platform @500Hz
+    
+    // Control Flags
+    bool stop;                     // Request global stop
+    bool estop_active;             // Emergency stop status
 };
 
 inline RobotSharedData* init_shared_memory(bool create = false) {

@@ -111,6 +111,16 @@
 **3. 狀態估計優化 (P3)**
 - 在 `state_estimator.cpp` 加入 Zero-Velocity Update (ZUPT) 靜止偵測，解決位置純積分漂移。
 
+### Phase 4: 通用機器人標準化平台 (2026-05-04)
+
+**1. 硬體介面合約 (Phase 1) - [已完成]**
+- **正式化介面**：升級 `shared_memory.hpp`，引入介面版本號 (`INTERFACE_VERSION`) 與擁有權 (Ownership) 定義。
+- **規範發布**：建立 `docs/plans/hardware_interface_contract.md`，提供第三方供應商標準接入指南。
+
+**2. 多供應商模擬 (Phase 2) - [已完成]**
+- **實作**：開發 `hal_quadruped_mock.cpp`，證明平台可無縫接管不同型態 (ROBOT_TYPE_QUAD) 的機器人硬體。
+- **驗證**：在本機端成功通過獨立編譯與 SHM 初始化驗證，確認型態識別邏輯正確。
+
 ---
 
 ## 4. 資料流 (Updated)

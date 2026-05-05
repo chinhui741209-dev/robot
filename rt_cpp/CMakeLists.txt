@@ -68,6 +68,21 @@ endif()
 
 install(TARGETS
   hal_buddy
+  hal_quadruped_mock
+  state_estimator
+  ros2_bridge
+  test_shm_logic
+  test_safety_logic
+  benchmark_rt
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_package()
+t PRIVATE rt)
+endif()
+
+install(TARGETS
+  hal_buddy
   state_estimator
   ros2_bridge
   test_shm_logic
