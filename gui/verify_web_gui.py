@@ -51,6 +51,8 @@ from policy.obs_utils import (
     quat_to_roll_pitch, OBS_DIM, ACT_DIM,
 )
 from policy.scripted_expert import ScriptedExpert
+from perception.detection_utils import decode_yolov8
+from perception.classes import get_class_names
 
 try:
     import onnxruntime as ort
@@ -116,6 +118,7 @@ class VerifyGui(Node):
         self.policy_sess = self._load_onnx(self.get_parameter("policy_model").value)
         self.detect_sess = (self._load_onnx(self.get_parameter("detect_model").value)
                             if self.camera_mode == "device" else None)
+        self.det_classes = get_class_names()
 
         self._last_imu = None
         self._last_det_msg = None
@@ -201,10 +204,6 @@ class VerifyGui(Node):
             self.cam_rate.tick()
         cap.release()
 
-    # detection_v2.onnx is a YOLOv8 model: output (1, 4+nc, num_anchors), boxes in
-    # input-pixel (det_size) coords, class scores already activated. Decode + NMS.
-    DET_CLASS_NAMES = ["pen", "box"]
-
     def _run_detection(self, frame):
         if self.detect_sess is None:
             return []
@@ -213,44 +212,14 @@ class VerifyGui(Node):
             img = cv2.resize(frame, (self.det_size, self.det_size)).astype(np.float32) / 255.0
             img = np.transpose(img, (2, 0, 1))[None, ...]
             name = self.detect_sess.get_inputs()[0].name
-            out = np.asarray(self.detect_sess.run(None, {name: img})[0])
-
-            # Normalise to (num_anchors, 4+nc).
-            if out.ndim == 3:
-                pred = out[0]
-                if pred.shape[0] < pred.shape[1]:   # (4+nc, anchors) -> transpose
-                    pred = pred.T
-            else:
-                pred = out
-            if pred.shape[1] <= 4:
-                return []
-            boxes_xywh = pred[:, :4]                  # cx,cy,w,h in det_size px
-            cls_scores = pred[:, 4:]
-            conf = cls_scores.max(axis=1)
-            cls_id = cls_scores.argmax(axis=1)
-            keep = conf >= self.det_conf
-            if not np.any(keep):
-                return []
-            boxes_xywh, conf, cls_id = boxes_xywh[keep], conf[keep], cls_id[keep]
-
-            sx, sy = W / self.det_size, H / self.det_size
-            rects = []  # x,y,w,h (top-left) in frame px for NMS
-            for (cx, cy, w, h) in boxes_xywh:
-                rects.append([int((cx - w / 2) * sx), int((cy - h / 2) * sy),
-                              int(w * sx), int(h * sy)])
-            idxs = cv2.dnn.NMSBoxes(rects, conf.tolist(), self.det_conf, 0.45)
-            idxs = np.array(idxs).ravel() if len(idxs) else []
-
-            dets = []
-            for i in idxs:
-                ci = int(cls_id[i])
-                cls = self.DET_CLASS_NAMES[ci] if ci < len(self.DET_CLASS_NAMES) else str(ci)
-                cx = boxes_xywh[i][0] * sx; cy = boxes_xywh[i][1] * sy
-                dets.append({"cls": cls, "score": float(conf[i]),
-                             "cx": float(cx), "cy": float(cy),
-                             "w": float(boxes_xywh[i][2] * sx),
-                             "h": float(boxes_xywh[i][3] * sy)})
-            return dets
+            out = self.detect_sess.run(None, {name: img})[0]
+            # Shared, tested YOLOv8 decoder (perception/detection_utils.py).
+            dets = decode_yolov8(out, W, H, input_size=self.det_size,
+                                 conf_thresh=self.det_conf, iou_thresh=0.45,
+                                 class_names=self.det_classes)
+            # Map "class" -> "cls" for this GUI's dict shape.
+            return [{"cls": d["class"], "score": d["score"], "cx": d["cx"],
+                     "cy": d["cy"], "w": d["w"], "h": d["h"]} for d in dets]
         except Exception as e:
             self.get_logger().warn(f"detection failed: {e}")
             return []

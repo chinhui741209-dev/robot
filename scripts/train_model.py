@@ -1,44 +1,56 @@
 #!/usr/bin/env python3
 """
-Train YOLOv8n model for pen and box detection
+Train a YOLOv8 detector on the synthetic dataset (Phase 3, portable).
+
+De-hardcoded: no os.chdir("/home/nvidia/..."), paths resolve against POC_ROOT,
+device is selectable (auto-detects CUDA, falls back to CPU — the Orin is
+currently CPU-only). Exports ONNX consumable by perception_node + the shared
+YOLOv8 decoder.
+
+Usage:
+    python3 scripts/train_model.py --data dataset/dataset.yaml --epochs 30 --device auto
 """
 
-from ultralytics import YOLO
-import torch
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from perception.classes import resolve_path
 
 
-def train_model():
-    import os
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default="dataset/dataset.yaml")
+    ap.add_argument("--weights", default="yolov8n.pt")
+    ap.add_argument("--epochs", type=int, default=30)
+    ap.add_argument("--imgsz", type=int, default=224)
+    ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--device", default="auto", help="auto|cpu|0|0,1")
+    ap.add_argument("--project", default="models")
+    ap.add_argument("--name", default="detector")
+    args = ap.parse_args()
 
-    os.chdir("/home/nvidia/poc/poc-orin")
+    from ultralytics import YOLO
+    import torch
 
-    print("Starting training...")
-    print(f"CUDA available: {torch.cuda.is_available()}")
+    device = args.device
+    if device == "auto":
+        device = "0" if torch.cuda.is_available() else "cpu"
+    print(f"Training device={device}  CUDA available={torch.cuda.is_available()}")
 
-    # Load pretrained model
-    model = YOLO("/home/nvidia/poc/poc-orin/yolov8n.pt")
+    data = resolve_path(args.data)
+    project = resolve_path(args.project)
+    weights = args.weights if os.path.isabs(args.weights) else args.weights  # ultralytics downloads if missing
 
-    # Train
-    results = model.train(
-        data="/home/nvidia/poc/poc-orin/dataset/dataset.yaml",
-        epochs=30,
-        imgsz=224,
-        batch=8,
-        device="cpu",
-        verbose=True,
-        project="/home/nvidia/poc/poc-orin/models",
-        name="pen_box_detector",
-        exist_ok=True,
-    )
+    model = YOLO(weights)
+    model.train(data=data, epochs=args.epochs, imgsz=args.imgsz, batch=args.batch,
+                device=device, project=project, name=args.name, exist_ok=True, verbose=True)
 
-    print("Training complete!")
-
-    # Export to ONNX
-    best_model = f"models/pen_box_detector/weights/best.pt"
-    model.export(format="onnx", imgsz=224, verbose=True)
-
-    print(f"Model exported to models/pen_box_detector/weights/best.onnx")
+    out = model.export(format="onnx", imgsz=args.imgsz)
+    print(f"Training complete. Exported ONNX: {out}")
+    print(f"Promote with: cp {out} {resolve_path('models/active/detection_v2.onnx')}")
 
 
 if __name__ == "__main__":
-    train_model()
+    main()
