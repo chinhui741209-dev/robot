@@ -1,118 +1,131 @@
 #!/usr/bin/env python3
 """
-Planner Node - Task planning and step control
- Receives parsed commands and generates step-by-step task plan
+Planner Node - event-driven, closed-loop task sequencer (Phase 2).
+
+Replaces the old open-loop "+1 every second" planner. Each step's precondition
+(which object must be present) is checked against the World Model scene graph;
+a step advances only when its precondition has held for a few consecutive
+checks, retries on timeout, and fails after exhausting retries.
+
+Subscribes:  /task/parsed_command  std_msgs/String (JSON intent/source/target/steps)
+             /world_model/state     std_msgs/String (JSON, present_classes[])
+Publishes:   /planner/current_step  std_msgs/Int32
+             /planner/state         std_msgs/String  (IDLE/RUNNING/COMPLETED/FAILED)
+             /planner/status        std_msgs/String  (JSON event detail)
+             /planner/task_plan     std_msgs/Float32MultiArray
+             /arbiter/mode          std_msgs/String  (IDLE/LOCOMOTION/MANIPULATION)
 """
 
-import signal
+import os
+import sys
 import json
+import time
+import signal
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32MultiArray
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from planner.step_logic import StepSequencer, RUNNING, COMPLETED, FAILED
+
+MANIP_KEYWORDS = ("grasp", "release", "move_to", "pick", "place", "gripper")
 
 
 class PlannerNode(Node):
     def __init__(self):
         super().__init__("planner")
+        self.declare_parameter("tick_hz", 4.0)
+        self.declare_parameter("confirm_needed", 2)
+        self.declare_parameter("timeout_s", 5.0)
+        self.declare_parameter("max_retries", 2)
 
-        self.command_sub = self.create_subscription(
-            String, "/task/parsed_command", self.command_callback, 10
-        )
+        self.create_subscription(String, "/task/parsed_command", self.command_callback, 10)
+        self.create_subscription(String, "/world_model/state", self.world_callback, 10)
 
-        self.plan_pub = self.create_publisher(
-            Float32MultiArray, "/planner/task_plan", 10
-        )
-
+        self.plan_pub = self.create_publisher(Float32MultiArray, "/planner/task_plan", 10)
         self.step_pub = self.create_publisher(Int32, "/planner/current_step", 10)
         self.state_pub = self.create_publisher(String, "/planner/state", 10)
+        self.status_pub = self.create_publisher(String, "/planner/status", 10)
+        self.mode_pub = self.create_publisher(String, "/arbiter/mode", 10)
 
-        self.get_logger().info("Planner Node started")
-
-        self.default_steps = ["Idle"]
-        self.current_steps = self.default_steps
-        self.current_command = None
-        self.current_step_idx = -1
-        self.state = "IDLE" # IDLE, RUNNING, COMPLETED
-        self.step_duration = 2.0
-
-        self.timer = self.create_timer(1.0, self.state_machine_callback)
+        self.seq = None
+        self.present_classes = []
+        tick = self.get_parameter("tick_hz").value
+        self.create_timer(1.0 / tick, self.tick)
+        self.get_logger().info("Planner (event-driven, closed-loop) started")
 
     def command_callback(self, msg):
         try:
-            command = json.loads(msg.data)
-        except:
-            self.get_logger().error(f"Failed to parse command: {msg.data}")
+            cmd = json.loads(msg.data)
+        except Exception:
+            self.get_logger().error(f"bad command: {msg.data}")
             return
+        steps = cmd.get("steps", [])
+        self.seq = StepSequencer(
+            steps, source=cmd.get("source"), target=cmd.get("target"),
+            confirm_needed=self.get_parameter("confirm_needed").value,
+            timeout_s=self.get_parameter("timeout_s").value,
+            max_retries=self.get_parameter("max_retries").value,
+        )
+        self.get_logger().info(f"Task '{cmd.get('intent')}' with {len(steps)} steps; "
+                               f"source={cmd.get('source')} target={cmd.get('target')}")
+        plan = Float32MultiArray()
+        plan.data = [float(i) for i in range(len(steps))]
+        self.plan_pub.publish(plan)
 
-        self.current_command = command
-        self.current_steps = command.get("steps", ["Default Action"])
-        self.current_step_idx = 0
-        self.state = "RUNNING"
+    def world_callback(self, msg):
+        try:
+            self.present_classes = json.loads(msg.data).get("present_classes", [])
+        except Exception:
+            pass
 
-        self.get_logger().info(f"Starting task: {command['intent']} with {len(self.current_steps)} steps")
+    def _mode_for_step(self, step):
+        if step is None:
+            return "IDLE"
+        s = step.lower()
+        return "MANIPULATION" if any(k in s for k in MANIP_KEYWORDS) else "LOCOMOTION"
 
-        plan_msg = Float32MultiArray()
-        plan_msg.data = [float(i) for i in range(len(self.current_steps))]
-        self.plan_pub.publish(plan_msg)
-        
-    def state_machine_callback(self):
-        # Publish current state
-        state_msg = String()
-        state_msg.data = self.state
-        self.state_pub.publish(state_msg)
-
-        if self.state != "RUNNING":
+    def tick(self):
+        if self.seq is None:
+            self._publish_mode("IDLE")
             return
+        now = time.monotonic()
+        ev = self.seq.update(self.present_classes, now)
 
-        if self.current_step_idx < len(self.current_steps):
-            step_name = self.current_steps[self.current_step_idx]
-            self.get_logger().info(f"Executing Step {self.current_step_idx}: {step_name}")
-            
-            step_msg = Int32()
-            step_msg.data = self.current_step_idx
-            self.step_pub.publish(step_msg)
-            
-            # Simulate step execution - in real system, wait for feedback
-            self.current_step_idx += 1
-        else:
-            self.get_logger().info("Task Completed")
-            self.state = "COMPLETED"
-            self.current_step_idx = -1
+        self.step_pub.publish(Int32(data=int(max(ev["idx"], 0))))
+        self.state_pub.publish(String(data=ev["state"]))
+        self.status_pub.publish(String(data=json.dumps(ev)))
+        self._publish_mode(self._mode_for_step(ev["step"]) if ev["state"] == RUNNING else "IDLE")
 
-    def execute_callback(self, msg):
-        if msg.data == "reset":
-            self.state = "IDLE"
-            self.current_step_idx = -1
-            self.current_command = None
-            self.current_steps = self.default_steps
+        if ev["advanced"] or ev["state"] in (COMPLETED, FAILED):
+            lvl = self.get_logger().warn if ev["state"] == FAILED else self.get_logger().info
+            lvl(f"[{ev['state']}] step={ev['idx']} '{ev['step']}' :: {ev['reason']}")
+        if ev["state"] in (COMPLETED, FAILED):
+            self.seq = None  # latch; await next command
+
+    def _publish_mode(self, mode):
+        self.mode_pub.publish(String(data=mode))
 
 
 def main(args=None):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-
     rclpy.init(args=args)
     node = PlannerNode()
-
     from rclpy.executors import MultiThreadedExecutor
-
     executor = MultiThreadedExecutor(num_threads=1)
     executor.add_node(node)
-
     try:
         executor.spin()
-    except Exception as e:
-        node.get_logger().error(f"Spin error: {e}")
+    except (KeyboardInterrupt, Exception) as e:
+        node.get_logger().error(f"spin: {e}")
     finally:
         try:
             node.destroy_node()
         except Exception:
             pass
-        try:
-            if rclpy.ok():
-                rclpy.shutdown()
-        except Exception:
-            pass
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
