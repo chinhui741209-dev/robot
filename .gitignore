@@ -50,3 +50,9 @@ logs/
 # Temporary
 *.tmp
 .cache/
+
+# BC pipeline artifacts
+data/
+models/candidate/
+__pycache__/
+*.pyc

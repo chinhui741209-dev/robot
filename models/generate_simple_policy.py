@@ -29,13 +29,19 @@ class SimpleLocomotionPolicy(nn.Module):
         return self.net(x)
 
 
-def generate_model(output_path="models/active/simple_policy.onnx"):
-    model = SimpleLocomotionPolicy(input_dim=13, hidden_dim=64, output_dim=32)
-    model.eval()
+def export_onnx(model, output_path, input_dim=13):
+    """Export a (trained or fresh) SimpleLocomotionPolicy to ONNX.
 
-    dummy_input = torch.zeros(1, 13)
+    Shared by generate_model() and models/train_policy.py so the export
+    settings (names, dynamic batch axis, opset) never drift. Exports a single
+    self-contained .onnx (no external .data side-file).
+    """
+    model = model.eval()
+    dummy_input = torch.zeros(1, input_dim)
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    out_dir = os.path.dirname(output_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     torch.onnx.export(
         model,
@@ -50,15 +56,17 @@ def generate_model(output_path="models/active/simple_policy.onnx"):
         opset_version=13,
     )
 
-    print(f"Model saved to: {output_path}")
-
     import onnx
 
     model_onnx = onnx.load(output_path)
     onnx.checker.check_model(model_onnx)
-    print("ONNX model validated")
-
+    print(f"Model saved + validated: {output_path}")
     return output_path
+
+
+def generate_model(output_path="models/active/simple_policy.onnx"):
+    model = SimpleLocomotionPolicy(input_dim=13, hidden_dim=64, output_dim=32)
+    return export_onnx(model, output_path, input_dim=13)
 
 
 if __name__ == "__main__":
