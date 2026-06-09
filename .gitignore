@@ -51,8 +51,11 @@ logs/
 *.tmp
 .cache/
 
-# BC pipeline artifacts
+# Secrets — NEVER commit API keys (ANTHROPIC_API_KEY etc.)
+*.env
+.env
+config/secrets.env
+
+# BC pipeline / training artifacts
 data/
 models/candidate/
-__pycache__/
-*.pyc

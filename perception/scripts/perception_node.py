@@ -50,6 +50,9 @@ class PerceptionNode(Node):
         self.declare_parameter("confidence_threshold", 0.5)
         self.declare_parameter("iou_threshold", 0.45)
         self.declare_parameter("input_size", 224)
+        self.declare_parameter("backend", "onnx")   # onnx | api (Claude vision)
+        self.declare_parameter("detect_rate", 0.5)  # API backend throttle (Hz) — API is slow/costly
+        self.declare_parameter("api_model", "claude-opus-4-8")
 
         self.class_names = get_class_names()
         model_path = resolve_path(self.get_parameter("model_path").value)
@@ -80,28 +83,57 @@ class PerceptionNode(Node):
                 self.get_logger().info(f"ONNX Runtime backend: {model_path}")
             except Exception as e:
                 self.get_logger().error(f"Failed to load detection model: {e}")
+        # Optional Claude vision API backend (open-vocabulary, no training).
+        self.backend = self.get_parameter("backend").value
+        self.detect_rate = max(0.05, float(self.get_parameter("detect_rate").value))
+        self.api_detector = None
+        self._last_api_t = 0.0
+        if self.backend == "api":
+            try:
+                from perception.api_backend import ClaudeVisionDetector
+                self.api_detector = ClaudeVisionDetector(
+                    model=self.get_parameter("api_model").value,
+                    conf_thresh=self.conf, logger=self.get_logger())
+                self.get_logger().info(
+                    f"Detection backend: Claude API ({self.get_parameter('api_model').value}), "
+                    f"rate {self.detect_rate} Hz (falls back to ONNX on error)")
+            except Exception as e:
+                self.get_logger().error(f"API backend init failed ({e}); using ONNX")
+                self.api_detector = None
+
         self.get_logger().info(f"Perception classes: {self.class_names}")
         self.frame_count = 0
+
+    def _detect(self, image):
+        """Return detections [{class,score,cx,cy,w,h}] using the active backend."""
+        # API backend: throttle hard (slow/costly); fall back to ONNX on empty/error.
+        if self.api_detector is not None:
+            now = time.time()
+            if now - self._last_api_t < 1.0 / self.detect_rate:
+                return None  # skip this frame (keep last published result cadence low)
+            self._last_api_t = now
+            dets = self.api_detector.detect(image, class_hints=self.class_names)
+            return dets  # may be [] on API error; that's a valid "nothing seen"
+        # ONNX backend (Phase 3 shared decoder)
+        if self.session is None and self.trt_engine is None:
+            return None
+        inp = self.preprocess(image)
+        out = self.trt_engine.run(inp)[0] if self.trt_engine else \
+            self.session.run(None, {self.input_name: inp})[0]
+        return decode_yolov8(out, image.shape[1], image.shape[0], input_size=self.input_size,
+                             conf_thresh=self.conf, iou_thresh=self.iou, class_names=self.class_names)
 
     def preprocess(self, image):
         img = cv2.resize(image, (self.input_size, self.input_size)).astype(np.float32) / 255.0
         return np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0)
 
     def image_callback(self, msg):
-        if self.session is None and self.trt_engine is None:
-            return
         try:
             start = time.time()
             image = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
-            inp = self.preprocess(image)
-            if self.trt_engine:
-                out = self.trt_engine.run(inp)[0]
-            else:
-                out = self.session.run(None, {self.input_name: inp})[0]
-
-            dets = decode_yolov8(out, msg.width, msg.height, input_size=self.input_size,
-                                 conf_thresh=self.conf, iou_thresh=self.iou,
-                                 class_names=self.class_names)
+            dets = self._detect(image)
+            if dets is None:
+                return  # backend not ready, or API throttled this frame
 
             det_arr = Detection2DArray()
             det_arr.header = Header()

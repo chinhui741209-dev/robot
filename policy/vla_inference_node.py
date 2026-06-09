@@ -26,31 +26,51 @@ class VlaInferenceNode(Node):
     def __init__(self):
         super().__init__("vla_inference_node")
         
-        # Params (Updated for OpenVLA)
+        # Params
         self.declare_parameter("model_path", "/home/nvidia/poc/models/openvla-7b")
         self.declare_parameter("use_real_ai", True)
-        
+        self.declare_parameter("backend", "mock")        # mock | openvla | api (Claude brain)
+        self.declare_parameter("api_model", "claude-opus-4-8")
+
         self.model_path = self.get_parameter("model_path").value
-        self.use_real_ai = self.get_parameter("use_real_ai").value and AI_AVAILABLE
-        
+        self.backend = self.get_parameter("backend").value
+        self.use_real_ai = (self.backend == "openvla") and \
+            self.get_parameter("use_real_ai").value and AI_AVAILABLE
+
         # VLA Inputs
         self.cmd_sub = self.create_subscription(String, "/ui/user_command", self.cmd_callback, 10)
         self.img_sub = self.create_subscription(Image, "/camera/image_raw", self.img_callback, 10)
-        
+
         # VLA Outputs
         self.action_pub = self.create_publisher(Float32MultiArray, "/skill/command", 10)
         self.step_pub = self.create_publisher(Int32, "/planner/current_step", 10)
-        
+        # Claude brain emits a task plan for the Phase 2 event-driven planner:
+        self.plan_pub = self.create_publisher(String, "/task/parsed_command", 10)
+
         self.latest_image = None
         self.is_processing = False
-        
+        self.vla_brain = None
+
         self.get_logger().info("==========================================")
-        if self.use_real_ai:
+        if self.backend == "api":
+            try:
+                import os
+                import sys
+                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                from policy.vla_brain import ClaudeVlaBrain
+                self.vla_brain = ClaudeVlaBrain(
+                    model=self.get_parameter("api_model").value, logger=self.get_logger())
+                self.get_logger().info(
+                    f"🧠 VLA brain: Claude API ({self.get_parameter('api_model').value})")
+            except Exception as e:
+                self.get_logger().error(f"Claude VLA init failed ({e}); falling back to MOCK")
+                self.backend = "mock"
+        elif self.use_real_ai:
             self.get_logger().info(f"🧠 INITIALIZING OpenVLA-7B MODEL from {self.model_path}...")
             self.init_ai_model()
             self.get_logger().info("✅ OpenVLA Model Loaded on GPU!")
         else:
-            self.get_logger().warn("⚠️ AI libraries not found or disabled. Running in MOCK Mode.")
+            self.get_logger().warn("⚠️ Running in MOCK Mode.")
         self.get_logger().info("==========================================")
 
     def init_ai_model(self):
@@ -82,11 +102,37 @@ class VlaInferenceNode(Node):
             return
             
         self.is_processing = True
-        
-        if self.use_real_ai:
+
+        if self.backend == "api" and self.vla_brain is not None:
+            self.run_api_vla(command)
+        elif self.use_real_ai:
             self.run_real_vla(command)
         else:
             self.run_mock_vla(command)
+
+    def _decode_image(self):
+        if self.latest_image is None:
+            return None
+        try:
+            m = self.latest_image
+            bpp = (m.step // m.width) if m.width else 3
+            frame = np.frombuffer(m.data, np.uint8).reshape(m.height, m.width, bpp)
+            if bpp == 4:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+            return np.ascontiguousarray(frame)
+        except Exception:
+            return None
+
+    def run_api_vla(self, command):
+        import json
+        self.get_logger().info(f"🧠 [Claude VLA] Planning: {command}")
+        plan = self.vla_brain.plan(command, frame_bgr=self._decode_image(), scene_objects=None)
+        if plan is None:
+            self.get_logger().warn("VLA produced no plan.")
+        else:
+            self.plan_pub.publish(String(data=json.dumps(plan)))
+            self.get_logger().info(f"[Claude VLA] plan -> {plan}")
+        self.is_processing = False
 
     def run_real_vla(self, command):
         self.get_logger().info(f"🧠 [OpenVLA] Processing Task: {command}")

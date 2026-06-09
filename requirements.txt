@@ -8,4 +8,5 @@ pycuda
 pytest
 torch
 ultralytics
+anthropic  # Claude Vision API backend (perception + VLA brain); needs ANTHROPIC_API_KEY
 # tensorrt is typically pre-installed via JetPack on Orin

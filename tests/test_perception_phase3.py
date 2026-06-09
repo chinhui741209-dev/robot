@@ -67,8 +67,10 @@ def test_to_anchors_transposes_channels_first():
     assert a.shape == (1029, 6)
 
 
-def test_class_config_env_override(monkeypatch):
+def test_class_config_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("POC_CLASSES", "pen, box, apple, orange")
     assert C.get_class_names() == ["pen", "box", "apple", "orange"]
     monkeypatch.delenv("POC_CLASSES")
+    # Isolate from any repo-local config/classes.txt so the fallback is deterministic.
+    monkeypatch.setenv("POC_ROOT", str(tmp_path))
     assert C.get_class_names() == C.DEFAULT_CLASSES
