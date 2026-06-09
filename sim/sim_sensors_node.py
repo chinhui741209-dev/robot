@@ -35,6 +35,11 @@ class SimSensorsNode(Node):
         self.declare_parameter("seed", 0)
         self.declare_parameter("img_w", 640)
         self.declare_parameter("img_h", 480)
+        # Allow IMU-only mode so a REAL camera+perception can own /perception/objects.
+        self.declare_parameter("publish_imu", True)
+        self.declare_parameter("publish_det", True)
+        self.publish_imu = self.get_parameter("publish_imu").value
+        self.publish_det = self.get_parameter("publish_det").value
         rate = self.get_parameter("rate").value
         self.src = SimObsSource(seed=self.get_parameter("seed").value,
                                 img_w=self.get_parameter("img_w").value,
@@ -50,6 +55,12 @@ class SimSensorsNode(Node):
         obs = self.src.step()
         now = self.get_clock().now().to_msg()
 
+        if self.publish_imu:
+            self._publish_imu(obs, now)
+        if self.publish_det:
+            self._publish_det(obs, now)
+
+    def _publish_imu(self, obs, now):
         imu = sensor_msgs.msg.Imu()
         imu.header.stamp = now
         imu.header.frame_id = "imu_link"
@@ -64,6 +75,7 @@ class SimSensorsNode(Node):
             float(a[0]), float(a[1]), float(a[2])
         self.imu_pub.publish(imu)
 
+    def _publish_det(self, obs, now):
         det_arr = Detection2DArray()
         det_arr.header.stamp = now
         det_arr.header.frame_id = "camera_link"
