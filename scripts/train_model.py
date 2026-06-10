@@ -41,9 +41,14 @@ def main():
 
     data = resolve_path(args.data)
     project = resolve_path(args.project)
-    weights = args.weights if os.path.isabs(args.weights) else args.weights  # ultralytics downloads if missing
 
-    model = YOLO(weights)
+    # Prefer pretrained weights (ultralytics auto-downloads); fall back to
+    # training from the architecture spec if the download is unavailable.
+    try:
+        model = YOLO(args.weights)
+    except Exception as e:
+        print(f"pretrained '{args.weights}' unavailable ({e}); training from scratch (yolov8n.yaml)")
+        model = YOLO("yolov8n.yaml")
     model.train(data=data, epochs=args.epochs, imgsz=args.imgsz, batch=args.batch,
                 device=device, project=project, name=args.name, exist_ok=True, verbose=True)
 

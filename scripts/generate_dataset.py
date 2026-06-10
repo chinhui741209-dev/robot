@@ -23,12 +23,13 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from perception.classes import get_class_names
 
-# Per-class appearance hints; unknown classes fall back to a random rectangle.
+# Per-class appearance hints — colors chosen to be mutually distinct (BGR) so
+# the detector can separate them (earlier red pen vs red apple was confusable).
 SHAPES = {
-    "pen":    {"kind": "rect", "color": (0, 0, 255),   "w": (12, 26),  "h": (70, 150), "rot": True},
-    "box":    {"kind": "rect", "color": (255, 0, 0),   "w": (70, 150), "h": (55, 120), "rot": False},
-    "apple":  {"kind": "circle", "color": (40, 40, 220), "r": (22, 40)},
-    "orange": {"kind": "circle", "color": (40, 150, 240), "r": (22, 40)},
+    "pen":    {"kind": "rect",   "color": (0, 0, 255),   "w": (14, 28),  "h": (70, 150), "rot": True},   # red, thin
+    "box":    {"kind": "rect",   "color": (255, 60, 0),  "w": (75, 150), "h": (60, 130), "rot": False},  # blue, big
+    "apple":  {"kind": "circle", "color": (0, 180, 0),   "r": (24, 42)},                                  # green
+    "orange": {"kind": "circle", "color": (0, 140, 255), "r": (24, 42)},                                  # orange
 }
 
 
@@ -51,7 +52,9 @@ def draw_object(img, cls, W, H):
             angle = random.uniform(-35, 35)
             box = cv2.boxPoints(((cx, cy), (w, h), angle))
             cv2.drawContours(img, [np.intp(box)], 0, spec["color"], -1)  # np.int0 was removed in NumPy 2
-            bw = bh = max(w, h)  # axis-aligned bound approx for rotated rect
+            xs, ys = box[:, 0], box[:, 1]   # true axis-aligned bbox of the rotated rect
+            cx = float((xs.min() + xs.max()) / 2); cy = float((ys.min() + ys.max()) / 2)
+            bw = float(xs.max() - xs.min()); bh = float(ys.max() - ys.min())
         else:
             cv2.rectangle(img, (cx - w // 2, cy - h // 2), (cx + w // 2, cy + h // 2), spec["color"], -1)
             bw, bh = w, h
@@ -88,9 +91,12 @@ def generate(out_dir, num, classes, W=640, H=640, seed=0):
         with open(os.path.join(lbl_dir, f"image_{i:04d}.txt"), "w") as f:
             f.write("\n".join(labels))
 
+    # Ultralytics resolves train/val relative to `path` (dataset root). Use an
+    # absolute root + relative split paths to avoid the doubled-dir pitfall.
     with open(os.path.join(out_dir, "dataset.yaml"), "w") as f:
-        f.write(f"train: {os.path.join(out_dir, 'images', 'train')}\n"
-                f"val: {os.path.join(out_dir, 'images', 'train')}\n"
+        f.write(f"path: {os.path.abspath(out_dir)}\n"
+                f"train: images/train\n"
+                f"val: images/train\n"
                 f"nc: {len(classes)}\nnames: {list(classes)}\n")
     print(f"Generated {num} images, classes={classes} -> {out_dir}")
 
