@@ -59,3 +59,8 @@ config/secrets.env
 # BC pipeline / training artifacts
 data/
 models/candidate/
+
+# Detector training artifacts
+dataset/
+models/detector/
+yolov8n.pt
