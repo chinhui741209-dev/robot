@@ -35,32 +35,42 @@ def main():
     if not shards:
         raise SystemExit(f"No .npz shards found in {args.indir}")
 
-    obs_list, act_list = [], []
+    # Split each shard contiguously (head -> train, tail -> val). A global shuffle
+    # + front-slice would leak temporally-adjacent frames across train/val (50 Hz
+    # trajectories are highly correlated), inflating val performance.
+    tr_o, tr_a, va_o, va_a = [], [], [], []
     for f in shards:
         d = np.load(f, allow_pickle=True)
-        obs_list.append(d["obs"].astype(np.float32))
-        act_list.append(d["act"].astype(np.float32))
-        print(f"  loaded {f}: obs={d['obs'].shape} act={d['act'].shape}")
+        o = d["obs"].astype(np.float32); a = d["act"].astype(np.float32)
+        n = len(o)
+        nv = max(1, int(n * args.val_frac)) if n > 1 else 0
+        if 0 < nv < n:
+            tr_o.append(o[:-nv]); tr_a.append(a[:-nv])
+            va_o.append(o[-nv:]); va_a.append(a[-nv:])
+        else:
+            tr_o.append(o); tr_a.append(a)
+        print(f"  loaded {f}: obs={o.shape} act={a.shape} (val tail {nv})")
 
-    obs = np.concatenate(obs_list, axis=0)
-    act = np.concatenate(act_list, axis=0)
-    assert obs.shape[1] == OBS_DIM, f"obs dim {obs.shape[1]} != {OBS_DIM}"
-    assert act.shape[1] == ACT_DIM, f"act dim {act.shape[1]} != {ACT_DIM}"
+    tr_obs = np.concatenate(tr_o, axis=0)
+    tr_act = np.concatenate(tr_a, axis=0)
+    val_obs = np.concatenate(va_o, axis=0) if va_o else np.empty((0, OBS_DIM), np.float32)
+    val_act = np.concatenate(va_a, axis=0) if va_a else np.empty((0, ACT_DIM), np.float32)
+    assert tr_obs.shape[1] == OBS_DIM, f"obs dim {tr_obs.shape[1]} != {OBS_DIM}"
+    assert tr_act.shape[1] == ACT_DIM, f"act dim {tr_act.shape[1]} != {ACT_DIM}"
 
     # Drop rows with NaN/Inf in either obs or act.
-    good = np.isfinite(obs).all(axis=1) & np.isfinite(act).all(axis=1)
-    dropped = int((~good).sum())
-    obs, act = obs[good], act[good]
-    if dropped:
-        print(f"  dropped {dropped} non-finite rows")
+    def _finite(o, a):
+        good = np.isfinite(o).all(axis=1) & np.isfinite(a).all(axis=1)
+        return o[good], a[good], int((~good).sum())
+    tr_obs, tr_act, d1 = _finite(tr_obs, tr_act)
+    val_obs, val_act, d2 = _finite(val_obs, val_act)
+    if d1 + d2:
+        print(f"  dropped {d1 + d2} non-finite rows")
 
+    # Shuffle TRAIN only (val order is irrelevant).
     rng = np.random.default_rng(args.seed)
-    perm = rng.permutation(len(obs))
-    obs, act = obs[perm], act[perm]
-
-    n_val = max(1, int(len(obs) * args.val_frac))
-    val_obs, val_act = obs[:n_val], act[:n_val]
-    tr_obs, tr_act = obs[n_val:], act[n_val:]
+    perm = rng.permutation(len(tr_obs))
+    tr_obs, tr_act = tr_obs[perm], tr_act[perm]
 
     os.makedirs(args.out, exist_ok=True)
     tr_path = os.path.join(args.out, "dataset_train.npz")

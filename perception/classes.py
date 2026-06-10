@@ -12,7 +12,10 @@ Override the class list with the POC_CLASSES env var (comma-separated) or a
 
 import os
 
-DEFAULT_CLASSES = ["pen", "box"]
+# Aligned with task_parser's command vocabulary so the detector's class list and
+# the planner's required classes don't diverge (override via POC_CLASSES env or
+# config/classes.txt). The Claude API backend is open-vocabulary regardless.
+DEFAULT_CLASSES = ["pen", "box", "apple", "orange"]
 
 
 def poc_root():

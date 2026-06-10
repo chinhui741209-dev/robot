@@ -88,6 +88,7 @@ class PerceptionNode(Node):
         self.detect_rate = max(0.05, float(self.get_parameter("detect_rate").value))
         self.api_detector = None
         self._last_api_t = 0.0
+        self._last_api_dets = []  # republished between API calls so the topic stays fresh
         if self.backend == "api":
             try:
                 from perception.api_backend import ClaudeVisionDetector
@@ -110,10 +111,13 @@ class PerceptionNode(Node):
         if self.api_detector is not None:
             now = time.time()
             if now - self._last_api_t < 1.0 / self.detect_rate:
-                return None  # skip this frame (keep last published result cadence low)
+                # Between API calls, republish the last detections so
+                # /perception/objects stays fresh (world_model persistence would
+                # otherwise decay the tracks between slow API frames).
+                return self._last_api_dets
             self._last_api_t = now
-            dets = self.api_detector.detect(image, class_hints=self.class_names)
-            return dets  # may be [] on API error; that's a valid "nothing seen"
+            self._last_api_dets = self.api_detector.detect(image, class_hints=self.class_names)
+            return self._last_api_dets  # may be [] on API error; that's a valid "nothing seen"
         # ONNX backend (Phase 3 shared decoder)
         if self.session is None and self.trt_engine is None:
             return None

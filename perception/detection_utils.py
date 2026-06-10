@@ -71,8 +71,13 @@ def decode_yolov8(out, frame_w, frame_h, input_size=224,
     w = boxes[:, 2] * sx; h = boxes[:, 3] * sy
     xyxy = np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
 
+    # Class-aware NMS: offset boxes by class id so different classes never
+    # overlap in NMS space (otherwise a pen lying on a box would be suppressed).
+    offset = cls_id.astype(np.float32) * (max(frame_w, frame_h) + 1.0)
+    xyxy_nms = xyxy + offset[:, None]
+
     dets = []
-    for i in _nms_numpy(xyxy, conf, iou_thresh):
+    for i in _nms_numpy(xyxy_nms, conf, iou_thresh):
         ci = int(cls_id[i])
         name = class_names[ci] if (class_names and ci < len(class_names)) else str(ci)
         dets.append({"class": name, "score": float(conf[i]),

@@ -42,6 +42,7 @@ class ExpertNode(Node):
         self.declare_parameter("record", True)
         self.declare_parameter("out_dir", "data/bc")
         self.declare_parameter("max_steps", 0)  # 0 = unbounded
+        self.declare_parameter("max_obs_age", 0.5)  # s; stale imu -> skip, stale det -> drop
 
         self.rate = self.get_parameter("rate").value
         self.record = self.get_parameter("record").value
@@ -54,8 +55,11 @@ class ExpertNode(Node):
         self.create_subscription(sensor_msgs.msg.Imu, "/buddy/imu", self._imu_cb, 10)
         self.create_subscription(Detection2DArray, "/perception/objects", self._det_cb, 10)
 
+        self.max_obs_age = float(self.get_parameter("max_obs_age").value)
         self._last_imu = None
         self._last_det = None
+        self._imu_t = 0.0
+        self._det_t = 0.0
         self._obs_buf = []
         self._act_buf = []
 
@@ -64,14 +68,18 @@ class ExpertNode(Node):
 
     def _imu_cb(self, msg):
         self._last_imu = msg
+        self._imu_t = time.time()
 
     def _det_cb(self, msg):
         self._last_det = msg
+        self._det_t = time.time()
 
     def _tick(self):
-        if self._last_imu is None:
-            return
-        obs = build_obs13_from_msgs(self._last_imu, self._last_det)
+        now = time.time()
+        if self._last_imu is None or (now - self._imu_t) > self.max_obs_age:
+            return  # no/stale IMU -> don't emit or record
+        det = self._last_det if (now - self._det_t) <= self.max_obs_age else None
+        obs = build_obs13_from_msgs(self._last_imu, det)
         act = self.expert.act(obs)
 
         msg = Float32MultiArray()
@@ -98,6 +106,9 @@ class ExpertNode(Node):
                  meta=np.array(f"source=expert_node;expert={EXPERT_VERSION};"
                                f"obs_schema={OBS_SCHEMA};steps={len(obs)}"))
         self.get_logger().info(f"Wrote {len(obs)} (obs,act) pairs -> {path}")
+        # Clear so a second flush (e.g. main's finally after a max_steps stop)
+        # does not write the same data twice.
+        self._obs_buf, self._act_buf = [], []
 
 
 def main(args=None):

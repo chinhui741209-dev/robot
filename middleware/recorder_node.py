@@ -35,7 +35,9 @@ class Recorder(Node):
         super().__init__("recorder")
 
         self.declare_parameter("out_dir", "data/bc")
+        self.declare_parameter("max_obs_age", 0.5)  # s; older imu/det is stale -> don't pair
         self.out_dir = self.get_parameter("out_dir").value
+        self.max_obs_age = float(self.get_parameter("max_obs_age").value)
 
         self.create_subscription(Imu, "/buddy/imu", self._imu_cb, 10)
         self.create_subscription(Detection2DArray, "/perception/objects", self._det_cb, 10)
@@ -45,6 +47,8 @@ class Recorder(Node):
 
         self._last_imu = None
         self._last_det = None
+        self._imu_t = 0.0
+        self._det_t = 0.0
         self._obs_buf = []
         self._act_buf = []
         self._skipped = 0
@@ -53,16 +57,23 @@ class Recorder(Node):
 
     def _imu_cb(self, msg):
         self._last_imu = msg
+        self._imu_t = time.time()
 
     def _det_cb(self, msg):
         self._last_det = msg
+        self._det_t = time.time()
 
     def _act_cb(self, msg):
-        # Pair the incoming action with the latest observation.
-        if self._last_imu is None or len(msg.data) < ACT_DIM:
+        # Pair the action with a FRESH observation; skip if the IMU is stale
+        # (topic stalled) and drop a stale detection so we don't bake a phantom
+        # target into obs after perception dies.
+        now = time.time()
+        if self._last_imu is None or (now - self._imu_t) > self.max_obs_age \
+                or len(msg.data) < ACT_DIM:
             self._skipped += 1
             return
-        obs = build_obs13_from_msgs(self._last_imu, self._last_det)
+        det = self._last_det if (now - self._det_t) <= self.max_obs_age else None
+        obs = build_obs13_from_msgs(self._last_imu, det)
         act = np.asarray(msg.data[:ACT_DIM], dtype=np.float32)
         self._obs_buf.append(obs)
         self._act_buf.append(act)

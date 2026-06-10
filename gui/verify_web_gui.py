@@ -176,7 +176,10 @@ class VerifyGui(Node):
     def _image_cb(self, msg):
         try:
             ch = 3 if msg.encoding in ("bgr8", "rgb8") else 1
-            arr = np.frombuffer(msg.data, np.uint8).reshape(msg.height, msg.width, ch)
+            # Honour row stride (msg.step may exceed width*ch with padded buffers).
+            step = msg.step if msg.step else msg.width * ch
+            arr = np.frombuffer(msg.data, np.uint8).reshape(msg.height, step)
+            arr = arr[:, : msg.width * ch].reshape(msg.height, msg.width, ch)
             if msg.encoding == "rgb8":
                 arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
             elif ch == 1:
@@ -225,7 +228,7 @@ class VerifyGui(Node):
             return []
 
     def _publish_frame(self, frame):
-        for d in self._last_dets:
+        for d in list(self._last_dets):  # snapshot ref (set by another thread)
             x1 = int(d["cx"] - d["w"] / 2); y1 = int(d["cy"] - d["h"] / 2)
             x2 = int(d["cx"] + d["w"] / 2); y2 = int(d["cy"] + d["h"] / 2)
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 220, 0), 2)
@@ -238,35 +241,35 @@ class VerifyGui(Node):
 
     # ── compute telemetry ───────────────────────────────────────────────────
     def _update_telemetry(self):
-        if self._last_imu is None:
-            return
-        det = self._best_det_for_obs()
-        obs = build_obs13_from_msgs(self._last_imu, self._last_det_msg) \
-            if (self.camera_mode == "ros") else self._obs_from_imu_and_det(det)
-        roll, pitch = quat_to_roll_pitch(obs[0:4])
-
-        policy_act = self._run_policy(obs)
-        expert_act = self.expert.act(obs)
-        diff = float(np.mean(np.abs(policy_act - expert_act))) if policy_act is not None else None
-
+        # Camera + detections render even without IMU (e.g. ros mode without a
+        # sim_sensors/IMU source); obs/policy/expert panels need the IMU.
         tel = {
-            "imu": {
+            "detections": list(self._last_dets),
+            "rates": {"cam_hz": round(self.cam_rate.hz(), 1),
+                      "imu_hz": round(self.imu_rate.hz(), 1)},
+            "has_imu": self._last_imu is not None,
+            "has_policy": self.policy_sess is not None,
+            "ts": round(time.time(), 2),
+        }
+        if self._last_imu is not None:
+            det = self._best_det_for_obs()
+            obs = build_obs13_from_msgs(self._last_imu, self._last_det_msg) \
+                if (self.camera_mode == "ros") else self._obs_from_imu_and_det(det)
+            roll, pitch = quat_to_roll_pitch(obs[0:4])
+            policy_act = self._run_policy(obs)
+            expert_act = self.expert.act(obs)
+            diff = float(np.mean(np.abs(policy_act - expert_act))) if policy_act is not None else None
+            tel["imu"] = {
                 "roll_deg": round(float(np.degrees(roll)), 2),
                 "pitch_deg": round(float(np.degrees(pitch)), 2),
                 "quat": [round(float(x), 4) for x in obs[0:4]],
                 "gyro": [round(float(x), 4) for x in obs[4:7]],
                 "accel": [round(float(x), 3) for x in obs[7:10]],
-            },
-            "obs": [round(float(x), 4) for x in obs],
-            "detections": self._last_dets,
-            "policy": [round(float(x), 4) for x in policy_act] if policy_act is not None else [],
-            "expert": [round(float(x), 4) for x in expert_act],
-            "diff_mae": round(diff, 5) if diff is not None else None,
-            "rates": {"cam_hz": round(self.cam_rate.hz(), 1),
-                      "imu_hz": round(self.imu_rate.hz(), 1)},
-            "has_policy": policy_act is not None,
-            "ts": round(time.time(), 2),
-        }
+            }
+            tel["obs"] = [round(float(x), 4) for x in obs]
+            tel["policy"] = [round(float(x), 4) for x in policy_act] if policy_act is not None else []
+            tel["expert"] = [round(float(x), 4) for x in expert_act]
+            tel["diff_mae"] = round(diff, 5) if diff is not None else None
         with self.state.lock:
             self.state.telemetry = tel
 
@@ -383,21 +386,23 @@ function cmp(el,p,e){el.innerHTML='';for(let i=0;i<Math.max(p.length,e.length);i
   f.style.width=w+'%';f.style.left=(v<0?50-w:50)+'%';b.appendChild(f);wrap.appendChild(b);});
  r.appendChild(wrap);el.appendChild(r);}}
 async function tick(){try{let d=await(await fetch('/data.json?'+Date.now())).json();
- if(!d.imu){return}
+ if(!d.ts){return}
  document.getElementById('ts').textContent='@'+d.ts;
- let im=d.imu;document.getElementById('imu').innerHTML=
-  `<b>roll</b> ${im.roll_deg}°  <b>pitch</b> ${im.pitch_deg}°<br>`+
-  `<b>quat</b> [${im.quat.join(', ')}]<br><b>gyro</b> [${im.gyro.join(', ')}]<br>`+
-  `<b>accel</b> [${im.accel.join(', ')}]`;
- document.getElementById('obs').innerHTML='<b>obs[13]</b> ['+d.obs.join(', ')+']';
- document.getElementById('rates').innerHTML=
+ // camera + detections + rates render with or without IMU
+ document.getElementById('dets').innerHTML='<b>detections:</b> '+
+  (d.detections&&d.detections.length?d.detections.map(x=>`${x.cls}(${x.score.toFixed(2)})`).join(', '):'<span class=muted>none</span>');
+ if(d.rates)document.getElementById('rates').innerHTML=
   `<b>cam</b> ${d.rates.cam_hz} Hz  <b>imu</b> ${d.rates.imu_hz} Hz  `+
   `<b>policy</b> ${d.has_policy?'loaded':'<span style=color:#f66>none</span>'}`;
- document.getElementById('dets').innerHTML='<b>detections:</b> '+
-  (d.detections.length?d.detections.map(x=>`${x.cls}(${x.score.toFixed(2)})`).join(', '):'<span class=muted>none</span>');
- if(d.policy.length)bars(document.getElementById('joints'),d.policy);
- document.getElementById('diff').textContent=(d.diff_mae==null?'–':d.diff_mae);
- cmp(document.getElementById('cmp'),d.policy,d.expert);
+ if(d.imu){let im=d.imu;document.getElementById('imu').innerHTML=
+   `<b>roll</b> ${im.roll_deg}°  <b>pitch</b> ${im.pitch_deg}°<br>`+
+   `<b>quat</b> [${im.quat.join(', ')}]<br><b>gyro</b> [${im.gyro.join(', ')}]<br>`+
+   `<b>accel</b> [${im.accel.join(', ')}]`;
+  document.getElementById('obs').innerHTML='<b>obs[13]</b> ['+d.obs.join(', ')+']';
+  if(d.policy&&d.policy.length)bars(document.getElementById('joints'),d.policy);
+  document.getElementById('diff').textContent=(d.diff_mae==null?'–':d.diff_mae);
+  cmp(document.getElementById('cmp'),d.policy||[],d.expert||[]);
+ }else{document.getElementById('imu').innerHTML='<span class=muted>waiting for IMU (/buddy/imu)…</span>';}
  }catch(e){}}
 setInterval(tick,200);tick();
 </script></body></html>"""

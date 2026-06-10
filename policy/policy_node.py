@@ -120,10 +120,11 @@ class PolicyNode(Node):
         if imu is None:
             return
 
-        # Prepare Perception data (highest score detection)
+        # Prepare Perception data (highest score detection; guard empty results)
         det_data = [0.0, 0.0, 0.0] # x, y, score
-        if det_msg and len(det_msg.detections) > 0:
-            best_det = max(det_msg.detections, key=lambda d: d.results[0].hypothesis.score)
+        cand = [d for d in det_msg.detections if d.results] if det_msg else []
+        if cand:
+            best_det = max(cand, key=lambda d: d.results[0].hypothesis.score)
             det_data = [
                 best_det.bbox.center.position.x,
                 best_det.bbox.center.position.y,

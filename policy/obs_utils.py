@@ -59,13 +59,18 @@ def best_detection(det_msg):
 
     Mirrors policy_node.py L123-131 exactly so deployment and training agree.
     """
-    if det_msg is not None and len(det_msg.detections) > 0:
-        best = max(det_msg.detections, key=lambda d: d.results[0].hypothesis.score)
-        return [
-            float(best.bbox.center.position.x),
-            float(best.bbox.center.position.y),
-            float(best.results[0].hypothesis.score),
-        ]
+    if det_msg is not None:
+        # Guard against detections with an empty results list (real perception
+        # nodes can publish bbox-only detections) — indexing d.results[0] there
+        # would raise IndexError inside the subscriber callback.
+        cand = [d for d in det_msg.detections if d.results]
+        if cand:
+            best = max(cand, key=lambda d: d.results[0].hypothesis.score)
+            return [
+                float(best.bbox.center.position.x),
+                float(best.bbox.center.position.y),
+                float(best.results[0].hypothesis.score),
+            ]
     return [0.0, 0.0, 0.0]
 
 
