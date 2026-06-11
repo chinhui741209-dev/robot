@@ -27,9 +27,7 @@ from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32MultiArray
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from planner.step_logic import StepSequencer, RUNNING, COMPLETED, FAILED
-
-MANIP_KEYWORDS = ("grasp", "release", "move_to", "pick", "place", "gripper")
+from planner.step_logic import StepSequencer, mode_for_step, RUNNING, COMPLETED, FAILED
 
 
 class PlannerNode(Node):
@@ -80,12 +78,6 @@ class PlannerNode(Node):
         except Exception:
             pass
 
-    def _mode_for_step(self, step):
-        if step is None:
-            return "IDLE"
-        s = step.lower()
-        return "MANIPULATION" if any(k in s for k in MANIP_KEYWORDS) else "LOCOMOTION"
-
     def tick(self):
         if self.seq is None:
             self._publish_mode("IDLE")
@@ -96,7 +88,7 @@ class PlannerNode(Node):
         self.step_pub.publish(Int32(data=int(max(ev["idx"], 0))))
         self.state_pub.publish(String(data=ev["state"]))
         self.status_pub.publish(String(data=json.dumps(ev)))
-        self._publish_mode(self._mode_for_step(ev["step"]) if ev["state"] == RUNNING else "IDLE")
+        self._publish_mode(mode_for_step(ev["step"]) if ev["state"] == RUNNING else "IDLE")
 
         if ev["advanced"] or ev["state"] in (COMPLETED, FAILED):
             lvl = self.get_logger().warn if ev["state"] == FAILED else self.get_logger().info

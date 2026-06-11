@@ -19,6 +19,21 @@ COMPLETED = "COMPLETED"
 FAILED = "FAILED"
 
 
+MANIP_KEYWORDS = ("grasp", "release", "move_to", "pick", "place", "gripper")
+
+
+def mode_for_step(step_name):
+    """Dual-brain arbitration mode for a step: which 'brain' has motor authority.
+
+    MANIPULATION -> 4-DoF skill/arm; LOCOMOTION -> 32-DoF BC policy; IDLE -> none.
+    Pure so the planner->arbiter coordination chain is unit-testable.
+    """
+    if step_name is None:
+        return "IDLE"
+    s = step_name.lower()
+    return "MANIPULATION" if any(k in s for k in MANIP_KEYWORDS) else "LOCOMOTION"
+
+
 def step_precondition(step_name, source, target):
     """Which object class (if any) must be present for this step to advance."""
     s = (step_name or "").lower()
