@@ -41,6 +41,19 @@ def test_parse_detections_clamps_and_skips_bad_rows():
     assert len(out) == 1 and out[0]["class"] == "box"
     assert out[0]["cx"] == 100 and out[0]["cy"] == 0   # clamped to [0,1]*dim
 
+def test_parse_detections_depth():
+    ti = {"detections": [
+        {"label": "cup", "confidence": 0.8, "cx": 0.5, "cy": 0.5, "w": 0.1, "h": 0.1, "depth_m": 1.5},
+        {"label": "pen", "confidence": 0.8, "cx": 0.2, "cy": 0.2, "w": 0.1, "h": 0.1, "depth_m": -3},  # invalid -> None
+        {"label": "box", "confidence": 0.8, "cx": 0.3, "cy": 0.3, "w": 0.1, "h": 0.1},                 # absent -> None
+    ]}
+    out = parse_detections(ti, 640, 480, conf_thresh=0.3)
+    by = {d["class"]: d for d in out}
+    assert by["cup"]["depth"] == 1.5
+    assert by["pen"]["depth"] is None
+    assert by["box"]["depth"] is None
+
+
 def test_parse_detections_empty_and_malformed():
     assert parse_detections({}, 640, 480) == []
     assert parse_detections({"detections": []}, 640, 480) == []

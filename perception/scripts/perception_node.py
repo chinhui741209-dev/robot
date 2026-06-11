@@ -24,6 +24,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from vision_msgs.msg import (
     Detection2DArray, Detection2D, ObjectHypothesisWithPose,
+    Detection3DArray, Detection3D,
 )
 from std_msgs.msg import Header, Float32MultiArray, String
 import cv2
@@ -33,6 +34,7 @@ import onnxruntime as ort
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from perception.detection_utils import decode_yolov8
 from perception.classes import get_class_names, resolve_path
+from perception.projection import CameraIntrinsics, backproject
 
 try:
     from perception.trt_inference import TRTInference
@@ -53,6 +55,7 @@ class PerceptionNode(Node):
         self.declare_parameter("backend", "onnx")   # onnx | api (Claude vision)
         self.declare_parameter("detect_rate", 0.5)  # API backend throttle (Hz) — API is slow/costly
         self.declare_parameter("api_model", "claude-opus-4-8")
+        self.declare_parameter("hfov_deg", 70.0)     # for monocular 3D back-projection
 
         self.class_names = get_class_names()
         model_path = resolve_path(self.get_parameter("model_path").value)
@@ -60,9 +63,12 @@ class PerceptionNode(Node):
         self.conf = self.get_parameter("confidence_threshold").value
         self.iou = self.get_parameter("iou_threshold").value
         self.input_size = self.get_parameter("input_size").value
+        self.hfov_deg = float(self.get_parameter("hfov_deg").value)
+        self._intr = None  # CameraIntrinsics, built lazily from first frame size
 
         self.create_subscription(Image, "/camera/image_raw", self.image_callback, 10)
         self.detection_pub = self.create_publisher(Detection2DArray, "/perception/objects", 10)
+        self.det3d_pub = self.create_publisher(Detection3DArray, "/perception/objects_3d", 10)
         self.scene_pub = self.create_publisher(String, "/perception/scene_state", 10)
         self.latency_pub = self.create_publisher(Float32MultiArray, "/perception/latency", 10)
 
@@ -154,6 +160,7 @@ class PerceptionNode(Node):
                 dm.results.append(hyp)
                 det_arr.detections.append(dm)
             self.detection_pub.publish(det_arr)
+            self._publish_3d(dets, msg)
 
             scene = {"objects": [{"class": d["class"], "x": int(d["cx"]), "y": int(d["cy"]),
                                   "confidence": round(d["score"], 3)} for d in dets]}
@@ -166,6 +173,30 @@ class PerceptionNode(Node):
                 self.get_logger().info(f"Latency {latency:.1f}ms, detections {len(dets)}")
         except Exception as e:
             self.get_logger().error(f"Error processing image: {e}")
+
+    def _publish_3d(self, dets, msg):
+        """Back-project detections that carry a depth estimate to camera-frame 3D."""
+        dets3d = [d for d in dets if d.get("depth") is not None]
+        if not dets3d:
+            return
+        if self._intr is None:
+            self._intr = CameraIntrinsics.from_fov(msg.width, msg.height, self.hfov_deg)
+        arr = Detection3DArray()
+        arr.header = Header()
+        arr.header.stamp = self.get_clock().now().to_msg()
+        arr.header.frame_id = msg.header.frame_id or "camera_link"
+        for d in dets3d:
+            X, Y, Z = backproject(d["cx"], d["cy"], d["depth"], self._intr)
+            dm = Detection3D()
+            dm.bbox.center.position.x = float(X)
+            dm.bbox.center.position.y = float(Y)
+            dm.bbox.center.position.z = float(Z)
+            hyp = ObjectHypothesisWithPose()
+            hyp.hypothesis.class_id = d["class"]
+            hyp.hypothesis.score = d["score"]
+            dm.results.append(hyp)
+            arr.detections.append(dm)
+        self.det3d_pub.publish(arr)
 
 
 def main(args=None):

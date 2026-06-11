@@ -43,8 +43,10 @@ REPORT_TOOL = {
                         "cy": {"type": "number", "description": "bbox center y, normalized 0..1"},
                         "w": {"type": "number", "description": "bbox width, normalized 0..1"},
                         "h": {"type": "number", "description": "bbox height, normalized 0..1"},
+                        "depth_m": {"type": "number",
+                                    "description": "estimated distance from camera to object, in metres"},
                     },
-                    "required": ["label", "confidence", "cx", "cy", "w", "h"],
+                    "required": ["label", "confidence", "cx", "cy", "w", "h", "depth_m"],
                     "additionalProperties": False,
                 },
             }
@@ -79,8 +81,16 @@ def parse_detections(tool_input, frame_w, frame_h, conf_thresh=0.3):
             label = str(d["label"]).strip().lower()
             if not label:
                 continue
+            depth = None
+            if d.get("depth_m") is not None:
+                try:
+                    depth = float(d["depth_m"])
+                    if depth <= 0:
+                        depth = None
+                except (TypeError, ValueError):
+                    depth = None
             out.append({"class": label, "score": score,
-                        "cx": cx, "cy": cy, "w": w, "h": h})
+                        "cx": cx, "cy": cy, "w": w, "h": h, "depth": depth})
         except (KeyError, TypeError, ValueError):
             continue
     return out
@@ -114,7 +124,8 @@ class ClaudeVisionDetector:
                 if class_hints else "")
         prompt = (f"Detect the physical objects in this robot camera image. {hint}"
                   "Report any clearly visible object. Coordinates normalized 0..1, "
-                  "origin top-left. Use lowercase singular labels.")
+                  "origin top-left. Use lowercase singular labels. Also estimate "
+                  "depth_m = the distance in metres from the camera to each object.")
         try:
             resp = self.client.messages.create(
                 model=self.model,

@@ -82,5 +82,6 @@ def decode_yolov8(out, frame_w, frame_h, input_size=224,
         name = class_names[ci] if (class_names and ci < len(class_names)) else str(ci)
         dets.append({"class": name, "score": float(conf[i]),
                      "cx": float(cx[i]), "cy": float(cy[i]),
-                     "w": float(w[i]), "h": float(h[i])})
+                     "w": float(w[i]), "h": float(h[i]),
+                     "depth": None})  # YOLO is 2D; depth filled by other backends
     return dets
