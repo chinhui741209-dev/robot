@@ -115,6 +115,7 @@ class Studio:
         self._stop = False
         # 大腦 Agent（可抽換模型：雲端 LLM ↔ 本地，含 fallback）。視覺鎖定改走此抽象層。
         self.last_brain = None         # 最近一次 BrainAgent 視覺決策（稽核用）
+        self.detect_retries = int(os.environ.get("BRAIN_DETECT_RETRIES", "3"))  # 鎖定多幀重試次數
         self.brain = self._build_brain()
 
     # provider -> env var(s) that enable it
@@ -221,12 +222,20 @@ class Studio:
             with self.lock:
                 self.ctrl.fail_lock("no camera frame")
             return
-        frame = self.frame.copy()
         dets = []
         if self.brain is not None:               # 統一抽象層：雲端/本地 + fallback + 稽核
-            dets = self.brain.detect(frame, class_hints=[target]) or []
-            self.last_brain = self.brain.last_decision
+            # 多幀重試：每指令抓多張即時影像，取第一個有偵到的——對抗「單張沒拍好 / VLM 當次回空」。
+            for attempt in range(self.detect_retries):
+                f = self.frame
+                if f is None:
+                    break
+                dets = self.brain.detect(f.copy(), class_hints=[target]) or []
+                self.last_brain = self.brain.last_decision
+                if dets:
+                    break
+                time.sleep(0.4)                  # 等相機換下一張影像再試
         else:                                    # 回退：舊的手刻鎖定鏈
+            frame = self.frame.copy()
             if self.providers:
                 dets = self._api_detect(frame, target)
             if not dets and self.onnx_ready:

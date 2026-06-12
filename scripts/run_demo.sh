@@ -12,5 +12,8 @@ pkill -f "[d]emo_studio.py" 2>/dev/null || true
 sleep 1
 
 cd "$REPO"
-echo "[run_demo] 啟動 Demo Studio :$PORT（相機 + BrainAgent + G1 3D，自動開瀏覽器）"
+# 用較強的 Gemini 模型提升辨識率（可由外部 env 覆蓋）；多幀重試次數亦可調。
+export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-pro}"
+export BRAIN_DETECT_RETRIES="${BRAIN_DETECT_RETRIES:-3}"
+echo "[run_demo] 啟動 Demo Studio :$PORT（相機 + BrainAgent(gemini=$GEMINI_MODEL) + G1 3D，自動開瀏覽器）"
 exec python3 gui/demo_studio.py --port "$PORT" --open
