@@ -22,9 +22,14 @@ class SkillNode(Node):
             Float32MultiArray, "/control/target", 10
         )
         
-        # Safety Limits (e.g., max 90 degrees for joints)
-        self.max_limits = np.array([90.0, 90.0, 90.0, 1.0])
-        self.min_limits = np.array([-90.0, -90.0, -90.0, 0.0])
+        # Safety Limits — 4-DoF simplified arm contract [shoulder, elbow, wrist, gripper].
+        # Arm limits are the real Unitree G1 (EDU 29-DOF) joint ranges in DEGREES,
+        # converted from g1_29dof.urdf (shoulder_pitch −3.0892..2.6704, elbow
+        # −1.0472..2.0944, wrist_pitch ±1.6144 rad). gripper is a 0..1 close fraction.
+        # NOTE: G1's full arm is 7-DoF; this demo guard covers the 3 driven joints
+        # + gripper. Real-robot commands convert deg -> rad at the unitree_hg boundary.
+        self.max_limits = np.array([153.0, 120.0,  92.5, 1.0])
+        self.min_limits = np.array([-177.0, -60.0, -92.5, 0.0])
         
         # Internal state for smoothing
         self.current_pos = np.zeros(4)
