@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot Demo Studio</title>
+<link rel="stylesheet" href="/assets/studio.css">
+</head>
+<body>
+<header>
+  <h1>🤖 Robot Demo Studio</h1>
+  <input id="cmd" placeholder="輸入指令，例如：幫我拿起桌上的滑鼠 / pick up the mouse">
+  <button id="send">送出</button>
+  <button id="mic" class="mic" title="語音輸入 (Chrome)">🎤</button>
+  <div id="phase">
+    <span class="pill" data-p="LOCATING">LOCATING</span>
+    <span class="pill" data-p="REACHING">REACHING</span>
+    <span class="pill" data-p="GRASPING">GRASPING</span>
+    <span class="pill" data-p="LIFTING">LIFTING</span>
+    <span class="pill" data-p="DONE">DONE</span>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>機器人之眼 · 開放詞彙鎖定</h2>
+    <div id="camWrap">
+      <img id="cam" src="/stream.mjpg" alt="camera">
+      <canvas id="overlay"></canvas>
+    </div>
+    <div id="camHint">說/打指令鎖定物體。無 API key 時：點畫面手動鎖定。</div>
+  </section>
+
+  <section class="card">
+    <h2>Unitree G1（7 軸臂 + Dex2/5）· 3D 數位分身</h2>
+    <div id="view3d"></div>
+  </section>
+
+  <section class="card">
+    <h2>馬達即時參數（模擬）</h2>
+    <table id="motors">
+      <thead><tr>
+        <th class="name">關節</th><th>角度 °</th><th>速度 °/s</th>
+        <th>扭矩 N·m</th><th>電流 A</th><th>溫度 °C</th><th>負載</th>
+      </tr></thead>
+      <tbody id="mrows"></tbody>
+    </table>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script src="/assets/three.min.js"></script>
+<script src="/assets/STLLoader.js"></script>
+<script src="/assets/URDFLoader.js"></script>
+<script src="/assets/OrbitControls.js"></script>
+<script src="/assets/studio.js"></script>
+</body>
+</html>

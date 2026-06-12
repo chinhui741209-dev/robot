@@ -50,3 +50,20 @@ logs/
 # Temporary
 *.tmp
 .cache/
+
+# Secrets — NEVER commit API keys (ANTHROPIC_API_KEY etc.)
+*.env
+.env
+config/secrets.env
+
+# BC pipeline / training artifacts
+data/
+models/candidate/
+
+# Detector training artifacts (synthetic dataset, ultralytics run dir, downloaded weights)
+dataset/
+models/detector/
+yolov8n.pt
+
+# G1 3D assets for Demo Studio (~105MB STL meshes) — fetched via scripts/fetch_g1_assets.sh
+gui/assets/g1/
