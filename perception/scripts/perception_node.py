@@ -1,27 +1,40 @@
 #!/usr/bin/env python3
 """
-Perception Node - ONNX Object Detection
- Subscribes to camera images and runs object detection
+Perception Node - ONNX/YOLOv8 Object Detection (Phase 3).
+
+Fixes the detection decoding: detection_v2.onnx is a YOLOv8 model with output
+(1, 4+nc, anchors). The old per-row [x,y,w,h,conf,cls] postprocess produced
+garbage; this uses the shared, tested decoder in perception/detection_utils.py.
+Class names come from perception/classes.py (single source of truth) and the
+model path is resolved against POC_ROOT (no hardcoded /home/nvidia/... path).
+
+Subscribes:  /camera/image_raw    sensor_msgs/Image
+Publishes:   /perception/objects  vision_msgs/Detection2DArray
+             /perception/scene_state  std_msgs/String (JSON)
+             /perception/latency  std_msgs/Float32MultiArray
 """
+
+import os
+import sys
+import json
+import time
 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from vision_msgs.msg import (
-    Detection2DArray,
-    Detection2D,
-    BoundingBox2D,
-    ObjectHypothesisWithPose,
+    Detection2DArray, Detection2D, ObjectHypothesisWithPose,
+    Detection3DArray, Detection3D,
 )
 from std_msgs.msg import Header, Float32MultiArray, String
 import cv2
 import numpy as np
 import onnxruntime as ort
-import os
-import sys
 
-# Add project root to path for package imports
-sys.path.insert(0, __file__.rsplit("/perception/", 1)[0])
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from perception.detection_utils import decode_yolov8
+from perception.classes import get_class_names, resolve_path
+from perception.projection import CameraIntrinsics, backproject
 
 try:
     from perception.trt_inference import TRTInference
@@ -34,42 +47,34 @@ class PerceptionNode(Node):
     def __init__(self):
         super().__init__("perception_node")
 
-        self.declare_parameter(
-            "model_path", "/home/nvidia/poc/poc-orin/models/active/detection_v2.onnx"
-        )
+        self.declare_parameter("model_path", "models/active/detection_v2.onnx")
         self.declare_parameter("use_trt", True)
         self.declare_parameter("confidence_threshold", 0.5)
+        self.declare_parameter("iou_threshold", 0.45)
         self.declare_parameter("input_size", 224)
-        self.declare_parameter("publish_rate", 10.0)
+        self.declare_parameter("backend", "onnx")   # onnx | api (Claude) | qwen (本地) | brain (BrainAgent 可抽換+fallback)
+        self.declare_parameter("detect_rate", 0.5)  # open-vocab backend throttle (Hz) — VLM is slow
+        self.declare_parameter("api_model", "claude-opus-4-8")
+        self.declare_parameter("qwen_model", "Qwen/Qwen2.5-VL-7B-Instruct")
+        self.declare_parameter("hfov_deg", 70.0)     # for monocular 3D back-projection
 
-        self.class_names = ["pen", "box"]
-
-        model_path = self.get_parameter("model_path").value
+        self.class_names = get_class_names()
+        model_path = resolve_path(self.get_parameter("model_path").value)
         self.use_trt = self.get_parameter("use_trt").value
-        self.confidence_threshold = self.get_parameter("confidence_threshold").value
+        self.conf = self.get_parameter("confidence_threshold").value
+        self.iou = self.get_parameter("iou_threshold").value
         self.input_size = self.get_parameter("input_size").value
-        self.publish_rate = self.get_parameter("publish_rate").value
+        self.hfov_deg = float(self.get_parameter("hfov_deg").value)
+        self._intr = None  # CameraIntrinsics, built lazily from first frame size
 
-        self.image_sub = self.create_subscription(
-            Image, "/camera/image_raw", self.image_callback, 10
-        )
-
-        self.detection_pub = self.create_publisher(
-            Detection2DArray, "/perception/objects", 10
-        )
-
+        self.create_subscription(Image, "/camera/image_raw", self.image_callback, 10)
+        self.detection_pub = self.create_publisher(Detection2DArray, "/perception/objects", 10)
+        self.det3d_pub = self.create_publisher(Detection3DArray, "/perception/objects_3d", 10)
         self.scene_pub = self.create_publisher(String, "/perception/scene_state", 10)
+        self.latency_pub = self.create_publisher(Float32MultiArray, "/perception/latency", 10)
 
-        self.latency_pub = self.create_publisher(
-            Float32MultiArray, "/perception/latency", 10
-        )
-
-        self.get_logger().info(f"Loading model: {model_path}")
-
-        # Initialize Inference Backend
         self.trt_engine = None
         self.session = None
-
         if self.use_trt and HAS_TRT:
             engine_path = model_path.replace(".onnx", ".engine")
             if os.path.exists(engine_path):
@@ -77,163 +82,162 @@ class PerceptionNode(Node):
                     self.trt_engine = TRTInference(engine_path)
                     self.get_logger().info(f"Using TensorRT backend: {engine_path}")
                 except Exception as e:
-                    self.get_logger().warn(f"Failed to load TRT engine, falling back: {e}")
-
+                    self.get_logger().warn(f"TRT load failed, falling back: {e}")
         if self.trt_engine is None:
             try:
                 self.session = ort.InferenceSession(model_path)
                 self.input_name = self.session.get_inputs()[0].name
-                self.output_name = self.session.get_outputs()[0].name
-                self.get_logger().info("Using ONNX Runtime backend")
+                self.get_logger().info(f"ONNX Runtime backend: {model_path}")
             except Exception as e:
-                self.get_logger().error(f"Failed to load model: {e}")
-                self.session = None
+                self.get_logger().error(f"Failed to load detection model: {e}")
+        # Optional Claude vision API backend (open-vocabulary, no training).
+        self.backend = self.get_parameter("backend").value
+        self.detect_rate = max(0.05, float(self.get_parameter("detect_rate").value))
+        self.api_detector = None
+        self._last_api_t = 0.0
+        self._last_api_dets = []  # republished between API calls so the topic stays fresh
+        if self.backend == "api":
+            try:
+                from perception.api_backend import ClaudeVisionDetector
+                self.api_detector = ClaudeVisionDetector(
+                    model=self.get_parameter("api_model").value,
+                    conf_thresh=self.conf, logger=self.get_logger())
+                self.get_logger().info(
+                    f"Detection backend: Claude API ({self.get_parameter('api_model').value}), "
+                    f"rate {self.detect_rate} Hz (falls back to ONNX on error)")
+            except Exception as e:
+                self.get_logger().error(f"API backend init failed ({e}); using ONNX")
+                self.api_detector = None
+        elif self.backend == "qwen":
+            # 本地 Qwen2.5-VL（不上雲）。共用 api_detector 的節流/重發路徑。
+            try:
+                from perception.qwen_backend import QwenVLDetector
+                self.api_detector = QwenVLDetector(
+                    model=self.get_parameter("qwen_model").value,
+                    conf_thresh=self.conf, logger=self.get_logger())
+                self.get_logger().info(
+                    f"Detection backend: local Qwen2.5-VL ({self.get_parameter('qwen_model').value}), "
+                    f"rate {self.detect_rate} Hz, on-device/不上雲 (falls back to ONNX on error)")
+            except Exception as e:
+                self.get_logger().error(f"Qwen backend init failed ({e}); using ONNX")
+                self.api_detector = None
+        elif self.backend == "brain":
+            # BrainAgent：依政策（cloud/local/auto + on_prem）選 vision 後端 + fallback。
+            # BrainAgent.detect(frame, class_hints=) 簽章相容既有節流/重發路徑。
+            try:
+                from brain_agent.backends import build_default_agent
+                self.api_detector = build_default_agent(logger=self.get_logger())
+                self.get_logger().info(
+                    f"Detection backend: BrainAgent (可抽換模型 + fallback), rate {self.detect_rate} Hz")
+            except Exception as e:
+                self.get_logger().error(f"BrainAgent init failed ({e}); using ONNX")
+                self.api_detector = None
 
+        self.get_logger().info(f"Perception classes: {self.class_names}")
         self.frame_count = 0
-        self.last_fps_time = self.get_clock().now()
+
+    def _detect(self, image):
+        """Return detections [{class,score,cx,cy,w,h}] using the active backend."""
+        # API backend: throttle hard (slow/costly); fall back to ONNX on empty/error.
+        if self.api_detector is not None:
+            now = time.time()
+            if now - self._last_api_t < 1.0 / self.detect_rate:
+                # Between API calls, republish the last detections so
+                # /perception/objects stays fresh (world_model persistence would
+                # otherwise decay the tracks between slow API frames).
+                return self._last_api_dets
+            self._last_api_t = now
+            self._last_api_dets = self.api_detector.detect(image, class_hints=self.class_names)
+            return self._last_api_dets  # may be [] on API error; that's a valid "nothing seen"
+        # ONNX backend (Phase 3 shared decoder)
+        if self.session is None and self.trt_engine is None:
+            return None
+        inp = self.preprocess(image)
+        out = self.trt_engine.run(inp)[0] if self.trt_engine else \
+            self.session.run(None, {self.input_name: inp})[0]
+        return decode_yolov8(out, image.shape[1], image.shape[0], input_size=self.input_size,
+                             conf_thresh=self.conf, iou_thresh=self.iou, class_names=self.class_names)
 
     def preprocess(self, image):
-        img = cv2.resize(image, (self.input_size, self.input_size))
-        img = img.astype(np.float32) / 255.0
-        img = np.transpose(img, (2, 0, 1))
-        img = np.expand_dims(img, axis=0)
-        return img
-
-    def postprocess(self, output, image_shape):
-        detections = []
-
-        if output is None or len(output) == 0:
-            return detections
-
-        try:
-            output = np.array(output[0])
-            if len(output) == 0:
-                return detections
-
-            for det in output:
-                det = np.array(det)
-                if len(det) < 6:
-                    continue
-
-                conf = float(det[4])
-                if conf < self.confidence_threshold:
-                    continue
-
-                cls = int(det[5])
-                x = float(det[0])
-                y = float(det[1])
-                w = float(det[2])
-                h = float(det[3])
-
-                x1 = int((x - w / 2) * image_shape[1])
-                y1 = int((y - h / 2) * image_shape[0])
-                x2 = int((x + w / 2) * image_shape[1])
-                y2 = int((y + h / 2) * image_shape[0])
-
-                x1 = max(0, min(x1, image_shape[1]))
-                y1 = max(0, min(y1, image_shape[0]))
-                x2 = max(0, min(x2, image_shape[1]))
-                y2 = max(0, min(y2, image_shape[0]))
-
-                class_name = (
-                    self.class_names[cls]
-                    if cls < len(self.class_names)
-                    else f"class{cls}"
-                )
-
-                detections.append(
-                    {"bbox": [x1, y1, x2, y2], "confidence": conf, "class": class_name}
-                )
-        except Exception as e:
-            pass
-
-        return detections
+        img = cv2.resize(image, (self.input_size, self.input_size)).astype(np.float32) / 255.0
+        return np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0)
 
     def image_callback(self, msg):
-        if self.session is None:
-            return
-
         try:
-            import time
+            start = time.time()
+            image = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
+            dets = self._detect(image)
+            if dets is None:
+                return  # backend not ready, or API throttled this frame
 
-            start_time = time.time()
-
-            image = np.frombuffer(msg.data, dtype=np.uint8)
-            image = image.reshape(msg.height, msg.width, 3)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-            input_data = self.preprocess(image)
-
-            if self.trt_engine:
-                outputs = self.trt_engine.run(input_data)
-            else:
-                outputs = self.session.run(
-                    [self.output_name], {self.input_name: input_data}
-                )
-
-            detections = self.postprocess(outputs, image.shape)
-
-            detection_msg = Detection2DArray()
-            detection_msg.header = Header()
-            detection_msg.header.stamp = self.get_clock().now().to_msg()
-            detection_msg.header.frame_id = msg.header.frame_id
-
-            for det in detections:
-                det_msg = Detection2D()
-                det_msg.bbox.center.position.x = (det["bbox"][0] + det["bbox"][2]) / 2
-                det_msg.bbox.center.position.y = (det["bbox"][1] + det["bbox"][3]) / 2
-                det_msg.bbox.size_x = det["bbox"][2] - det["bbox"][0]
-                det_msg.bbox.size_y = det["bbox"][3] - det["bbox"][1]
+            det_arr = Detection2DArray()
+            det_arr.header = Header()
+            det_arr.header.stamp = self.get_clock().now().to_msg()
+            det_arr.header.frame_id = msg.header.frame_id
+            for d in dets:
+                dm = Detection2D()
+                dm.bbox.center.position.x = d["cx"]
+                dm.bbox.center.position.y = d["cy"]
+                dm.bbox.size_x = d["w"]; dm.bbox.size_y = d["h"]
                 hyp = ObjectHypothesisWithPose()
-                hyp.hypothesis.class_id = det["class"]
-                hyp.hypothesis.score = det["confidence"]
-                det_msg.results.append(hyp)
-                detection_msg.detections.append(det_msg)
+                hyp.hypothesis.class_id = d["class"]
+                hyp.hypothesis.score = d["score"]
+                dm.results.append(hyp)
+                det_arr.detections.append(dm)
+            self.detection_pub.publish(det_arr)
+            self._publish_3d(dets, msg)
 
-            self.detection_pub.publish(detection_msg)
+            scene = {"objects": [{"class": d["class"], "x": int(d["cx"]), "y": int(d["cy"]),
+                                  "confidence": round(d["score"], 3)} for d in dets]}
+            self.scene_pub.publish(String(data=json.dumps(scene)))
 
-            import json
-
-            scene_objects = []
-            for det in detections:
-                scene_objects.append(
-                    {
-                        "class": det.get("class", "unknown"),
-                        "x": int(det["bbox"][0]),
-                        "y": int(det["bbox"][1]),
-                        "confidence": float(det["confidence"]),
-                    }
-                )
-            scene_msg = String()
-            scene_msg.data = json.dumps({"objects": scene_objects})
-            self.scene_pub.publish(scene_msg)
-
-            latency = (time.time() - start_time) * 1000
-            latency_msg = Float32MultiArray()
-            latency_msg.data = [latency, float(len(detections))]
-            self.latency_pub.publish(latency_msg)
-
+            latency = (time.time() - start) * 1000
+            self.latency_pub.publish(Float32MultiArray(data=[latency, float(len(dets))]))
             self.frame_count += 1
             if self.frame_count % 30 == 0:
-                self.get_logger().info(
-                    f"Latency: {latency:.1f}ms, Detections: {len(detections)}"
-                )
-
+                self.get_logger().info(f"Latency {latency:.1f}ms, detections {len(dets)}")
         except Exception as e:
             self.get_logger().error(f"Error processing image: {e}")
+
+    def _publish_3d(self, dets, msg):
+        """Back-project detections that carry a depth estimate to camera-frame 3D."""
+        dets3d = [d for d in dets if d.get("depth") is not None]
+        if not dets3d:
+            return
+        if self._intr is None:
+            self._intr = CameraIntrinsics.from_fov(msg.width, msg.height, self.hfov_deg)
+        arr = Detection3DArray()
+        arr.header = Header()
+        arr.header.stamp = self.get_clock().now().to_msg()
+        arr.header.frame_id = msg.header.frame_id or "camera_link"
+        for d in dets3d:
+            X, Y, Z = backproject(d["cx"], d["cy"], d["depth"], self._intr)
+            dm = Detection3D()
+            dm.bbox.center.position.x = float(X)
+            dm.bbox.center.position.y = float(Y)
+            dm.bbox.center.position.z = float(Z)
+            hyp = ObjectHypothesisWithPose()
+            hyp.hypothesis.class_id = d["class"]
+            hyp.hypothesis.score = d["score"]
+            dm.results.append(hyp)
+            arr.detections.append(dm)
+        self.det3d_pub.publish(arr)
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = PerceptionNode()
-
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, Exception):
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
