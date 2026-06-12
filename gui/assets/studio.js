@@ -89,7 +89,7 @@ const JOINT_MAP = {
   wrist_pitch:    'left_wrist_pitch_joint',
   wrist_yaw:      'left_wrist_yaw_joint',
 };
-let g1 = null, modelReady = false;
+let g1 = null, modelReady = false, framed = false;
 
 const urdfLoader = new URDFLoader();
 urdfLoader.loadMeshCb = function (path, manager, done) {
@@ -119,8 +119,27 @@ function applyPose(joints) {
   }
 }
 
+function frameRobot() {
+  // 等所有 STL mesh 載齊（bbox 有效）後，自動把整台 G1 框進畫面、腳底貼到地面格線。
+  const box = new THREE.Box3().setFromObject(g1);
+  const size = box.getSize(new THREE.Vector3());
+  if (!isFinite(size.y) || size.y < 0.5) return false;      // mesh 尚未載齊
+  g1.position.y -= box.min.y;                               // 腳底 -> y=0（grid 平面）
+  const b = new THREE.Box3().setFromObject(g1);
+  const c = b.getCenter(new THREE.Vector3());
+  const s = b.getSize(new THREE.Vector3());
+  const maxDim = Math.max(s.x, s.y, s.z);
+  const dist = (maxDim / 2) / Math.tan(Math.PI / 180 * 45 / 2) * 1.5;  // 1.5 = 邊距
+  controls.target.set(c.x, c.y, c.z);                       // 看向身體中心
+  cam3.position.set(c.x + dist * 0.55, c.y + s.y * 0.12, c.z + dist);
+  cam3.far = Math.max(50, dist * 12); cam3.updateProjectionMatrix();
+  controls.update();
+  return true;
+}
+
 function render3d() {
   controls.update();
+  if (modelReady && g1 && !framed) framed = frameRobot();   // 載入後自動框全身（一次）
   if (renderer.domElement.parentNode) renderer.render(scene, cam3);
   requestAnimationFrame(render3d);
 }

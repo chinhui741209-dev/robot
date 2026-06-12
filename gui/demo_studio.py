@@ -26,6 +26,8 @@ Open http://<host>:<port> in a browser (Chrome for voice input).
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -400,6 +402,35 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, "not found")
 
 
+def _open_browser(port):
+    """在本機桌面開瀏覽器指向 studio。從 SSH 啟動時自動鎖 DISPLAY=:0（Orin 桌面 session）。
+    無桌面/無瀏覽器時靜默略過（只會看到上方印出的 URL）。"""
+    url = f"http://localhost:{port}"
+    env = dict(os.environ)
+    env.setdefault("DISPLAY", ":0")                                   # SSH 啟動時指向實體桌面
+    env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
+    # 從 SSH 啟動時，user-session 的 runtime/dbus 不在環境裡，補上（GUI app 需要）。
+    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
+    # 優先非 snap 瀏覽器（firefox/epiphany）——snap chromium 從 SSH 啟動會因缺 cap 而開不了視窗。
+    for b in ("firefox", "epiphany-browser", "epiphany", "chromium-browser", "chromium", "xdg-open"):
+        if shutil.which(b):
+            if "chromium" in b:
+                cmd = [b, f"--app={url}"]
+            elif b == "firefox":
+                cmd = [b, "--new-window", url]
+            else:
+                cmd = [b, url]
+            try:
+                subprocess.Popen(cmd, env=env,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"  [open] 已在桌面開啟瀏覽器（{b}）→ {url}", flush=True)
+                return
+            except Exception as e:
+                print(f"  [open] {b} 開啟失敗：{e}", flush=True)
+    print(f"  [open] 找不到可用瀏覽器；請手動開 {url}", flush=True)
+
+
 def main():
     global STUDIO
     ap = argparse.ArgumentParser()
@@ -410,6 +441,8 @@ def main():
     ap.add_argument("--img-h", type=int, default=480)
     ap.add_argument("--vision", choices=["auto", "gemini", "openai", "claude", "none"],
                     default="auto", help="open-vocab lock backend (auto tries all by key)")
+    ap.add_argument("--open", action="store_true",
+                    help="啟動後在本機桌面自動開瀏覽器（Orin 桌面 DISPLAY=:0）")
     args = ap.parse_args()
 
     loaded = load_secrets()
@@ -428,6 +461,8 @@ def main():
           f"onnx_lock={'yes' if STUDIO.onnx_ready else 'no'}")
     print("  (Ctrl-C 結束)")
     print("=" * 64, flush=True)
+    if args.open:
+        _open_browser(args.port)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
